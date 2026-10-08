@@ -7,237 +7,178 @@
 <title>Reactor Duel</title>
 <link rel="stylesheet" href="fonts/fonts.css">
 <style>
-/* Layout: full-bleed battle canvas; your status top-left, enemy scan + intent top-right; reactor console docked at the bottom. Deliberately single dark theme (cockpit display). */
+/* Layout: battle canvas full-bleed. Top = read-only (comms strip + ship bars). Bottom = every control (orders + three power rows with their crew).
+   Deliberately single dark theme (cockpit display). */
 :root{
   color-scheme: dark;
   --void:#05070c;
   --panel:rgba(10,15,24,.58);
   --panel-solid:#0b111b;
-  --line:rgba(140,175,210,.18);
+  --line:rgba(140,175,210,.16);
   --ink:#dbe5ee;
   --dim:#7b8ea3;
   --shield:#52c8ff;
   --weapon:#ff9442;
   --engine:#b48cff;
+  --comms:#6fe3a5;
   --hull:#e7edf2;
   --danger:#ff5468;
-  --good:#6fe3a5;
   --f-display:"Saira Condensed","Arial Narrow",sans-serif;
   --f-body:"Saira",system-ui,sans-serif;
   --f-data:"IBM Plex Mono",ui-monospace,Menlo,monospace;
 }
 [hidden]{display:none!important}
 html,body{height:100%}
-body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);overflow:hidden;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);overflow:hidden;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
 #game{position:fixed;inset:0;width:100%;height:100%;display:block}
 #fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none}
 
-.hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;gap:12px;
-  padding:calc(12px + env(safe-area-inset-top,0px)) 16px calc(12px + env(safe-area-inset-bottom,0px))}
-.top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
-.panel{pointer-events:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
-.sys-read .r2{display:block}
-.status{width:min(300px,calc(50vw - 22px));display:grid;gap:7px;min-width:0}
-.status h2{margin:0;font-family:var(--f-display);font-weight:700;font-size:15px;letter-spacing:.14em;text-transform:uppercase;display:flex;justify-content:space-between;gap:8px}
-.status h2 small{font-weight:500;color:var(--dim);letter-spacing:.08em}
-.bar{display:grid;grid-template-columns:52px 1fr 44px;align-items:center;gap:8px;font-size:11px}
-.bar label{font-family:var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
-.bar .track{height:8px;border-radius:2px;background:rgba(255,255,255,.06);overflow:hidden}
-.bar .fill{height:100%;width:50%;background:var(--c);transition:width .12s linear}
-.bar output{font-family:var(--f-data);font-variant-numeric:tabular-nums;text-align:right;color:var(--ink)}
-.bar.hullbar{--c:var(--hull)} .bar.shbar{--c:var(--shield)} .bar.ftl{--c:var(--engine)}
-.bar.warn .fill{background:var(--danger)}
-.note{font-size:11px;color:var(--dim);line-height:1.35}
-.note.alert{color:var(--danger)}
+.hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;gap:10px;
+  padding:calc(12px + env(safe-area-inset-top,0px)) calc(16px + env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) calc(16px + env(safe-area-inset-left,0px))}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
 
-.scan{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-.scan div{display:grid;gap:3px}
-.scan span{font-family:var(--f-display);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);display:flex;justify-content:space-between}
-.scan b{font-family:var(--f-data);font-weight:500;color:var(--ink);font-size:10px}
-.scan i{display:block;height:5px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
+/* ---- top: read only ---- */
+.top{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr) minmax(0,230px);grid-template-areas:"mine comms foe";gap:10px;align-items:start}
+.comms{grid-area:comms;justify-self:center;width:min(100%,520px);display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center;padding:8px 12px;--c:var(--comms)}
+.who{font-family:var(--f-display);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.who b{color:var(--c);font-weight:700}
+.ship{padding:8px 10px;display:grid;gap:5px;min-width:0}
+.ship.mine{grid-area:mine}
+.ship.foe{grid-area:foe}
+.ship h2{margin:0;font-family:var(--f-display);font-weight:700;font-size:13px;letter-spacing:.16em;text-transform:uppercase;display:flex;justify-content:space-between}
+.ship h2 small{font-weight:500;color:var(--dim);letter-spacing:.1em}
+.bar{display:grid;grid-template-columns:44px 1fr 38px;align-items:center;gap:7px;font-size:10px}
+.bar label{font-family:var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.bar .track{height:6px;border-radius:2px;background:rgba(255,255,255,.07);overflow:hidden}
+.bar .fill{height:100%;width:50%;background:var(--c);transition:width .12s linear}
+.bar output{font-family:var(--f-data);font-variant-numeric:tabular-nums;text-align:right}
+.bar.hullbar{--c:var(--hull)} .bar.shbar{--c:var(--shield)}
+.bar.warn .fill{background:var(--danger)}
+.scan{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.scan i{display:block;height:4px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden}
 .scan i em{display:block;height:100%;background:var(--c);width:0}
 
-.intent{border-top:1px solid var(--line);padding-top:8px;display:grid;gap:4px}
-.intent .lbl{font-family:var(--f-display);font-size:10px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase}
-.intent .what{font-family:var(--f-display);font-weight:700;font-size:17px;letter-spacing:.04em;text-transform:uppercase}
-.intent.threat .what{color:var(--danger)}
-.intent.open .what{color:var(--good)}
-.intent .ibar{height:4px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
-.intent .ibar em{display:block;height:100%;width:0;background:var(--danger)}
+/* ---- crew faces + speech ---- */
+.face{width:38px;height:38px;flex:none;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--c);background:rgba(255,255,255,.04);
+  font:700 16px/1 var(--f-display);color:var(--c);transition:box-shadow .2s, transform .2s}
+.face.talk{box-shadow:0 0 0 3px rgba(255,255,255,.08),0 0 14px var(--c);transform:scale(1.06)}
+.say{font-size:12px;line-height:1.3;color:var(--dim);font-family:var(--f-data);font-variant-numeric:tabular-nums;min-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.say b{color:var(--ink);font-weight:500}
+.say .off{color:var(--danger)}
+.say.talk{font-family:var(--f-body);color:var(--ink);white-space:normal}
+.comms .say{font-size:13px}
+.comms .say.alert{color:#ffd0d6}
 
+/* ---- middle ---- */
 .mid{flex:1;display:flex;align-items:center;justify-content:center;pointer-events:none}
-#nudge{font-family:var(--f-display);letter-spacing:.12em;text-transform:uppercase;font-size:14px;padding:6px 12px;border-radius:4px;background:var(--panel);border:1px solid var(--line);opacity:0;transition:opacity .25s}
+#nudge{font-family:var(--f-display);letter-spacing:.1em;text-transform:uppercase;font-size:13px;padding:6px 12px;border-radius:4px;background:var(--panel);border:1px solid var(--line);opacity:0;transition:opacity .25s}
 #nudge.on{opacity:1}
+#log{display:none}
 
-.bottom{display:grid;gap:8px;justify-items:center}
-#log{display:grid;gap:2px;justify-items:center;min-height:52px;align-content:end}
-#log div{font-size:12px;color:var(--dim);text-shadow:0 1px 3px #000}
-#log div.hot{color:var(--ink)}
-
-.console{width:min(780px,100%);display:grid;gap:10px}
-.console-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
-.console-head h3{margin:0;font-family:var(--f-display);font-weight:700;font-size:14px;letter-spacing:.18em;text-transform:uppercase}
-.reactor{font-family:var(--f-data);font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+/* ---- bottom: every control ---- */
+.bottom{display:grid;justify-items:center}
+.console{pointer-events:auto;width:min(860px,100%);display:grid;gap:8px;padding:8px 10px}
+.orders{display:flex;align-items:stretch;gap:8px}
+.reactor{align-self:center;font-family:var(--f-data);font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
 .reactor b{color:var(--ink);font-weight:500}
 .reactor.flash b{color:var(--danger)}
-.ctrl{display:flex;gap:8px;align-items:center}
-.btn{pointer-events:auto;font:600 13px/1 var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--ink);background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:4px;padding:8px 12px;cursor:pointer}
+.order-list{flex:1;display:flex;gap:8px;min-width:0}
+.btn{pointer-events:auto;font:600 13px/1 var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--ink);background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:6px;padding:8px 12px;cursor:pointer;min-height:44px}
 .btn:hover{background:rgba(255,255,255,.1)}
-.btn:disabled{opacity:.45;cursor:default;background:rgba(255,255,255,.03)}
-.btn.jump{color:var(--engine);font-variant-numeric:tabular-nums;min-width:104px}
-.btn.jump.ready{border-color:var(--engine);background:rgba(180,140,255,.16);box-shadow:0 0 14px rgba(180,140,255,.35)}
-.btn:focus-visible,.pw:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.btn:focus-visible,.pw:focus-visible,.order:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.order{position:relative;flex:1;min-width:0;min-height:44px;overflow:hidden;border-radius:6px;border:1px solid var(--line);color:var(--dim);cursor:pointer;
+  background:linear-gradient(90deg, rgba(180,140,255,.16) calc(var(--p,0) * 100%), rgba(255,255,255,.03) 0);
+  display:grid;align-content:center;justify-items:start;gap:2px;padding:6px 12px;text-align:left;touch-action:none}
+.order::after{content:"";position:absolute;inset:0;background:rgba(180,140,255,.45);transform:scaleX(var(--h,0));transform-origin:left;pointer-events:none}
+.order .lab{position:relative;z-index:1;font:700 13px/1.1 var(--f-display);letter-spacing:.1em;text-transform:uppercase}
+.order .hint{position:relative;z-index:1;font:400 10px/1.2 var(--f-data);color:var(--dim)}
+.order.ready{border-color:var(--engine);color:var(--ink);box-shadow:0 0 14px rgba(180,140,255,.3)}
+.order.ready .lab{color:var(--engine)}
+.order:disabled{cursor:default}
+.ctl{font-size:12px}
 
 .systems{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-.sys{--c:var(--ink);display:grid;gap:6px;min-width:0}
+.sys{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:start;min-width:0}
 .sys[data-sys="shields"]{--c:var(--shield)}
 .sys[data-sys="weapons"]{--c:var(--weapon)}
 .sys[data-sys="engines"]{--c:var(--engine)}
-.sys-head{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
-.sys-name{font-family:var(--f-display);font-weight:700;font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:var(--c)}
-.key{font-family:var(--f-data);font-size:10px;color:var(--dim)}
-.sys-row{display:grid;grid-template-columns:36px 1fr 36px;gap:6px;align-items:center}
-.pw{pointer-events:auto;height:36px;border-radius:4px;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--c);font:600 20px/1 var(--f-data);cursor:pointer;touch-action:manipulation}
-.pw:hover{background:rgba(255,255,255,.09)}
+.sys .face{margin-top:2px}
+.sys-body{display:grid;gap:4px;min-width:0}
+.sys-head{display:flex;align-items:baseline;gap:8px}
+.sys-name{font-family:var(--f-display);font-weight:700;font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--c)}
+.crew-tag{font-family:var(--f-display);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.key{margin-left:auto;font-family:var(--f-data);font-size:10px;color:var(--dim)}
+.sys-row{display:grid;grid-template-columns:40px 1fr 40px;gap:6px;align-items:center}
+.pw{pointer-events:auto;height:40px;border-radius:6px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--c);font:600 20px/1 var(--f-data);cursor:pointer;touch-action:manipulation}
+.pw:hover{background:rgba(255,255,255,.1)}
 .pw:active{transform:translateY(1px)}
 .pips{display:flex;gap:3px;min-width:0}
-.pip{flex:1;height:24px;border:1px solid var(--line);border-radius:2px;position:relative;overflow:hidden;background:rgba(255,255,255,.025)}
+.pip{flex:1;height:22px;border:1px solid var(--line);border-radius:2px;position:relative;overflow:hidden;background:rgba(255,255,255,.025)}
 .pip::after{content:"";position:absolute;inset:0;background:var(--c);transform:scaleY(var(--f,0));transform-origin:bottom}
 .pip.tgt{border-color:var(--c)}
 .pip.over{background:repeating-linear-gradient(135deg,rgba(255,255,255,.08) 0 2px,transparent 2px 6px)}
 .pip.over::after{opacity:.35}
-.sys-read{font-family:var(--f-data);font-size:11px;color:var(--dim);line-height:1.4;min-height:31px;font-variant-numeric:tabular-nums}
-.sys-read b{color:var(--ink);font-weight:500}
-.sys-read .off{color:var(--danger)}
+.sys .say{font-size:11px}
 
+/* ---- overlays ---- */
 .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(3,5,9,.62);z-index:5;overflow:auto}
-.card{width:min(560px,100%);background:var(--panel-solid);border:1px solid var(--line);border-radius:8px;padding:22px;display:grid;gap:14px}
-.card .eyebrow{font-family:var(--f-display);letter-spacing:.22em;font-size:12px;color:var(--dim);text-transform:uppercase}
+.card{width:min(560px,100%);background:var(--panel-solid);border:1px solid var(--line);border-radius:10px;padding:22px;display:grid;gap:14px}
+.card .eyebrow{font-family:var(--f-display);letter-spacing:.2em;font-size:12px;color:var(--dim);text-transform:uppercase}
 .card h1{margin:0;font-family:var(--f-display);font-weight:700;font-size:clamp(34px,7vw,52px);letter-spacing:.06em;line-height:1;text-transform:uppercase;text-wrap:balance}
-.card p{margin:0;line-height:1.55;color:var(--ink);max-width:62ch}
+.card p{margin:0;line-height:1.55;max-width:62ch}
 .card .muted{color:var(--dim)}
-.rules{display:grid;gap:8px;margin:0;padding:0;list-style:none}
-.rules li{display:grid;grid-template-columns:86px 1fr;gap:10px;font-size:13px;line-height:1.45}
-.rules li b{font-family:var(--f-display);letter-spacing:.14em;text-transform:uppercase}
-.loadout{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;font-size:12px;border-top:1px solid var(--line);padding-top:12px}
-.loadout div{display:grid;gap:1px}
-.loadout span{font-family:var(--f-display);letter-spacing:.14em;text-transform:uppercase;font-size:10px;color:var(--dim)}
-.loadout code{font-family:var(--f-data);font-size:11px}
+.crew-intro{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.crew-intro li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;font-size:13px;line-height:1.4}
+.crew-intro .face{width:34px;height:34px;font-size:14px}
+.crew-intro b{font-family:var(--f-display);letter-spacing:.1em;text-transform:uppercase;color:var(--c)}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .stats div{display:grid;gap:2px}
 .stats span{font-family:var(--f-display);font-size:10px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
 .stats b{font-family:var(--f-data);font-weight:500;font-size:16px}
 .go{justify-self:start;font-size:16px;padding:12px 20px;border-color:var(--ink)}
+.btn:disabled{opacity:.45;cursor:default}
 .keys{font-family:var(--f-data);font-size:11px;color:var(--dim)}
 
-@media (max-width:640px){
-  .systems{grid-template-columns:1fr;gap:6px}
-  .sys{grid-template-columns:78px 1fr;align-items:center;column-gap:8px;row-gap:2px}
-  .sys-head{grid-row:1/3;flex-direction:column;gap:0}
-  .sys-read{min-height:0;font-size:10px}
-  .pip{height:20px}
-  .pw{height:32px}
-  .sys-row{grid-template-columns:32px 1fr 32px}
-  .status{padding:8px}
-  .bar{grid-template-columns:40px 1fr 34px;gap:5px;font-size:10px}
-  .intent .what{font-size:14px}
-  .key{display:none}
-  #log{min-height:0}
-  .stats{grid-template-columns:repeat(2,1fr)}
-  .rules li{grid-template-columns:1fr;gap:0}
-  .loadout{grid-template-columns:1fr}
-}
-@media (prefers-reduced-motion:reduce){.bar .fill{transition:none}}
-/* Phone in landscape: compact HUD so the battle stays visible. */
-body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
-.hud{padding-left:calc(16px + env(safe-area-inset-left,0px));padding-right:calc(16px + env(safe-area-inset-right,0px))}
-@media (max-height:500px){
-  .hud{padding:calc(6px + env(safe-area-inset-top,0px)) calc(10px + env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) calc(10px + env(safe-area-inset-left,0px));gap:4px}
-  .panel{padding:6px 9px;border-radius:5px}
-  .status{width:min(240px,calc(50vw - 16px));gap:3px}
-  .status h2{font-size:12px}
-  .bar{grid-template-columns:38px 1fr 34px;gap:5px;font-size:10px}
-  .bar .track{height:5px}
-  #p-note{display:none}
-  .scan span{font-size:9px}
-  .intent{padding-top:4px;gap:1px}
-  .intent .lbl{display:none}
-  .intent .what{font-size:13px}
-  .intent .note{font-size:10px;line-height:1.25}
-  #log{min-height:0;gap:0}
-  #log div{font-size:10px}
-  #log div:nth-last-child(n+3){display:none}
-  .console{width:min(700px,100%);gap:4px}
-  .console-head h3{display:none}
-  .reactor{font-size:11px}
-  .btn{padding:6px 10px;font-size:12px}
-  .btn.jump{min-width:92px}
-  .systems{gap:8px}
-  .sys{gap:3px}
-  .sys-name{font-size:12px}
-  .key{display:none}
-  .sys-row{grid-template-columns:34px 1fr 34px;gap:4px}
-  .pw{height:30px;font-size:18px}
-  .pip{height:15px}
-  .sys-read{font-size:9.5px;min-height:0;line-height:1.3}
-  .card{padding:14px 16px;gap:8px}
-  .card h1{font-size:30px}
-  .card p{font-size:12.5px;line-height:1.45}
-  .rules{gap:4px}
-  .rules li{font-size:11.5px;grid-template-columns:70px 1fr;line-height:1.35}
-  .loadout,.keys,.card .muted{display:none}
-  .go{font-size:14px;padding:9px 16px}
-}
-
-
-/* Phone in portrait: battle in the middle, power controls stacked at the bottom within thumb reach. */
+/* ---- phone portrait: comms strip on top, ship bars beneath, stacked power rows at the bottom ---- */
 @media (max-width:640px){
   .hud{padding:calc(8px + env(safe-area-inset-top,0px)) 10px calc(8px + env(safe-area-inset-bottom,0px));gap:6px}
-  .top{gap:8px}
-  .panel{padding:7px 9px}
-  .status{width:calc(50vw - 15px);gap:4px}
-  .status h2{font-size:12px}
-  .bar{grid-template-columns:36px 1fr 30px;gap:5px;font-size:10px}
-  .bar .track{height:5px}
-  #p-note{display:none}
-  .scan{gap:4px}
-  .scan span{font-size:8.5px;letter-spacing:.06em}
-  .intent{padding-top:5px;gap:2px}
-  .intent .lbl{display:none}
-  .intent .what{font-size:13px;line-height:1.15}
-  .intent .note{font-size:10px;line-height:1.25}
-  #log{min-height:0;gap:0}
-  #log div{font-size:10.5px}
-  #log div:nth-last-child(n+3){display:none}
-  .console{gap:6px;padding:8px 10px}
-  .console-head h3{display:none}
-  .reactor{font-size:11px}
-  .btn{padding:7px 10px;font-size:12px}
-  .btn.jump{min-width:96px}
-  .systems{gap:6px}
-  .sys{grid-template-columns:64px 1fr;column-gap:8px;row-gap:1px}
+  .panel{background:rgba(8,12,20,.42);border-color:rgba(140,175,210,.12)}
+  .top{grid-template-columns:1fr 1fr;grid-template-areas:"comms comms" "mine foe";gap:6px}
+  .comms{width:100%;padding:6px 8px;gap:8px}
+  .comms .face{width:32px;height:32px;font-size:14px}
+  .comms .say{font-size:12px}
+  .ship{padding:5px 8px;gap:3px}
+  .ship h2{font-size:11px}
+  .ship h2 small{display:none}
+  .bar{grid-template-columns:36px 1fr 28px;gap:5px;font-size:9.5px}
+  .bar .track{height:4px}
+  .console{padding:6px 8px;gap:6px}
+  .reactor{font-size:10px}
+  .order .lab{font-size:12px}
+  .systems{grid-template-columns:1fr;gap:6px}
+  .sys{gap:7px}
+  .sys .face{width:32px;height:32px;font-size:14px}
+  .sys-head{gap:6px}
   .sys-name{font-size:12px}
+  .crew-tag{font-size:10px}
+  .key{display:none}
   .sys-row{grid-template-columns:38px 1fr 38px;gap:5px}
-  .pw{height:34px}
-  .pip{height:18px}
-  .sys-read{font-size:9.5px;line-height:1.3}
-  .keys,.loadout{display:none}
+  .pw{height:36px}
+  .pip{height:16px}
+  .sys .say{font-size:10.5px}
   .card{padding:18px;gap:12px}
-  .panel{background:rgba(8,12,20,.38);border-color:rgba(140,175,210,.12)}
-  .status{width:auto;min-width:0;flex:0 1 46%}
-  .status h2 small{display:none}
-  #p-ftl{display:none}
-  .intent .note,.intent .ibar{display:none}
-  .intent{border-top:0;padding-top:0}
-  #log div:nth-last-child(n+2){display:none}
-  .console{padding:6px 8px;gap:4px}
-  .systems{gap:4px}
-  .sys{grid-template-columns:58px 1fr}
-  .sys-row{grid-template-columns:34px 1fr 34px;gap:4px}
-  .pw{height:30px}
-  .pip{height:14px}
-  #read-shields .r2,#read-engines .r2{display:none}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .keys{display:none}
 }
+/* short screens (landscape phones, small windows) */
+@media (max-height:520px) and (min-width:641px){
+  .hud{gap:4px;padding-top:6px;padding-bottom:6px}
+  .console{gap:4px;padding:5px 8px}
+  .pw{height:32px} .pip{height:14px} .btn,.order{min-height:36px}
+  .sys .face{width:30px;height:30px;font-size:13px}
+  .crew-intro li{font-size:12px}
+}
+@media (prefers-reduced-motion:reduce){.bar .fill,.face{transition:none}}
 </style>
 
 </head>
@@ -246,80 +187,83 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
 <canvas id="fx" aria-hidden="true"></canvas>
 
 <div class="hud">
-  <div class="top">
-    <section class="panel status" aria-label="Your ship">
+  <header class="top">
+    <section class="panel comms" aria-label="Comms">
+      <div class="face" id="face-tally" aria-hidden="true">T</div>
+      <div>
+        <div class="who"><b>Tally</b> · Comms</div>
+        <div class="say" id="line-tally" aria-live="polite">Scanning…</div>
+      </div>
+    </section>
+    <section class="panel ship mine" aria-label="Your ship">
       <h2>Kestrel <small>you</small></h2>
       <div class="bar hullbar" id="p-hull"><label>Hull</label><div class="track"><div class="fill"></div></div><output>110</output></div>
       <div class="bar shbar" id="p-sh"><label>Shield</label><div class="track"><div class="fill"></div></div><output>0</output></div>
-      <div class="bar ftl" id="p-ftl"><label>FTL</label><div class="track"><div class="fill"></div></div><output>0%</output></div>
-      <div class="note" id="p-note">Engine power slowly charges the jump drive.</div>
     </section>
-    <section class="panel status" aria-label="Enemy ship">
+    <section class="panel ship foe" aria-label="Enemy ship">
       <h2>Corsair <small>hostile</small></h2>
       <div class="bar hullbar" id="e-hull"><label>Hull</label><div class="track"><div class="fill"></div></div><output>140</output></div>
       <div class="bar shbar" id="e-sh"><label>Shield</label><div class="track"><div class="fill"></div></div><output>0</output></div>
       <div class="scan" aria-label="Scanned enemy power">
-        <div style="--c:var(--shield)"><span>Shd <b id="es-s">0</b></span><i><em id="eb-s"></em></i></div>
-        <div style="--c:var(--weapon)"><span>Wpn <b id="es-w">0</b></span><i><em id="eb-w"></em></i></div>
-        <div style="--c:var(--engine)"><span>Eng <b id="es-e">0</b></span><i><em id="eb-e"></em></i></div>
-      </div>
-      <div class="intent" id="intent">
-        <div class="lbl">Enemy intent</div>
-        <div class="what" id="i-what">Autocannon fire</div>
-        <div class="ibar" id="i-bar" hidden><em></em></div>
-        <div class="note" id="i-note">Steady fire with balanced shields.</div>
+        <i style="--c:var(--shield)"><em id="eb-s"></em></i>
+        <i style="--c:var(--weapon)"><em id="eb-w"></em></i>
+        <i style="--c:var(--engine)"><em id="eb-e"></em></i>
       </div>
     </section>
-  </div>
+  </header>
 
   <div class="mid"><div id="nudge" role="status"></div></div>
+  <div id="log" aria-hidden="true"></div>
 
-  <div class="bottom">
-    <div id="log" aria-live="polite"></div>
-    <section class="panel console" aria-label="Reactor console">
-      <div class="console-head">
-        <h3>Reactor</h3>
-        <div class="reactor" id="reactor">Output <b>10</b> · Free <b id="free">0</b></div>
-        <div class="ctrl"><button class="btn jump" id="jump" type="button" disabled>Jump 0%</button><button class="btn" id="pause" type="button">Pause</button></div>
+  <footer class="bottom">
+    <section class="panel console" aria-label="Captain's console">
+      <div class="orders">
+        <div class="reactor" id="reactor">Reactor <b>10</b><br>free <b id="free">0</b></div>
+        <div class="order-list" id="orders"></div>
+        <button class="btn ctl" id="pause" type="button">Pause</button>
       </div>
       <div class="systems">
         <div class="sys" data-sys="shields">
-          <div class="sys-head"><span class="sys-name">Shields</span><span class="key">Q + / A −</span></div>
-          <div class="sys-row"><button class="pw" id="shields-minus" data-k="shields" data-d="-1" aria-label="Less power to shields">−</button><div class="pips"></div><button class="pw" id="shields-plus" data-k="shields" data-d="1" aria-label="More power to shields">+</button></div>
-          <div class="sys-read" id="read-shields"></div>
+          <div class="face" id="face-fergus" aria-hidden="true">F</div>
+          <div class="sys-body">
+            <div class="sys-head"><span class="sys-name">Shields</span><span class="crew-tag">Fergus</span><span class="key">Q + / A −</span></div>
+            <div class="sys-row"><button class="pw" id="shields-minus" data-k="shields" data-d="-1" aria-label="Less power to shields">−</button><div class="pips"></div><button class="pw" id="shields-plus" data-k="shields" data-d="1" aria-label="More power to shields">+</button></div>
+            <div class="say" id="line-fergus"></div>
+          </div>
         </div>
         <div class="sys" data-sys="weapons">
-          <div class="sys-head"><span class="sys-name">Weapons</span><span class="key">W + / S −</span></div>
-          <div class="sys-row"><button class="pw" id="weapons-minus" data-k="weapons" data-d="-1" aria-label="Less power to weapons">−</button><div class="pips"></div><button class="pw" id="weapons-plus" data-k="weapons" data-d="1" aria-label="More power to weapons">+</button></div>
-          <div class="sys-read" id="read-weapons"></div>
+          <div class="face" id="face-dot" aria-hidden="true">D</div>
+          <div class="sys-body">
+            <div class="sys-head"><span class="sys-name">Weapons</span><span class="crew-tag">Dot</span><span class="key">W + / S −</span></div>
+            <div class="sys-row"><button class="pw" id="weapons-minus" data-k="weapons" data-d="-1" aria-label="Less power to weapons">−</button><div class="pips"></div><button class="pw" id="weapons-plus" data-k="weapons" data-d="1" aria-label="More power to weapons">+</button></div>
+            <div class="say" id="line-dot"></div>
+          </div>
         </div>
         <div class="sys" data-sys="engines">
-          <div class="sys-head"><span class="sys-name">Engines</span><span class="key">E + / D −</span></div>
-          <div class="sys-row"><button class="pw" id="engines-minus" data-k="engines" data-d="-1" aria-label="Less power to engines">−</button><div class="pips"></div><button class="pw" id="engines-plus" data-k="engines" data-d="1" aria-label="More power to engines">+</button></div>
-          <div class="sys-read" id="read-engines"></div>
+          <div class="face" id="face-juno" aria-hidden="true">J</div>
+          <div class="sys-body">
+            <div class="sys-head"><span class="sys-name">Engines</span><span class="crew-tag">Juno</span><span class="key">E + / D −</span></div>
+            <div class="sys-row"><button class="pw" id="engines-minus" data-k="engines" data-d="-1" aria-label="Less power to engines">−</button><div class="pips"></div><button class="pw" id="engines-plus" data-k="engines" data-d="1" aria-label="More power to engines">+</button></div>
+            <div class="say" id="line-juno"></div>
+          </div>
         </div>
       </div>
     </section>
-  </div>
+  </footer>
 </div>
 
 <div class="overlay" id="title">
   <div class="card">
-    <div class="eyebrow">Battle prototype 02 · Kestrel Lancer vs Corsair Raider</div>
+    <div class="eyebrow">Kestrel Lancer vs Corsair Raider</div>
     <h1>Reactor Duel</h1>
-    <p>You don't fly the ship. You run its reactor. Ten units of power, three systems, and power takes time to move. You have until the ships close to weapons range to set up. Read the enemy, then commit.</p>
-    <ul class="rules">
-      <li><b style="color:var(--shield)">Shields</b><span>More power means a bigger shield, faster regen and more damage resistance. A broken shield reboots faster with power in it, and stalls with none.</span></li>
-      <li><b style="color:var(--weapon)">Weapons</b><span>The pulse laser turret tracks the enemy and scales up to 3 power. The rail cannon needs 4+ power, only fires straight ahead, and punches through shields. Your pilot makes attack runs to line it up.</span></li>
-      <li><b style="color:var(--engine)">Engines</b><span>More power means more evasion and sharper turns, so your pilot lines up the rail faster and stays out of the enemy's torpedo arc. Engine power also charges the jump drive. Press Jump to escape, but you leave the salvage behind.</span></li>
+    <p>You're the captain, and you run the reactor. Ten units of power, three systems, and power takes time to move. Your crew will tell you what they need. Who gets it is up to you.</p>
+    <ul class="crew-intro">
+      <li style="--c:var(--comms)"><div class="face" aria-hidden="true">T</div><span><b>Tally</b>, comms. Tells you what the enemy is up to. Relays your orders.</span></li>
+      <li style="--c:var(--shield)"><div class="face" aria-hidden="true">F</div><span><b>Fergus</b>, engineer. Runs the shields and wants power for them.</span></li>
+      <li style="--c:var(--weapon)"><div class="face" aria-hidden="true">D</div><span><b>Dot</b>, weapons. Laser turret, plus a rail cannon called Doris that needs 4 power.</span></li>
+      <li style="--c:var(--engine)"><div class="face" aria-hidden="true">J</div><span><b>Juno</b>, pilot. Engines mean dodging, lining up Doris, and charging the jump drive.</span></li>
     </ul>
-    <div class="loadout">
-      <div><span>Pulse laser</span><code>Turret · 30° arc · 70°/s traverse</code></div>
-      <div><span>Rail cannon</span><code>Fixed forward · 20° arc</code></div>
-      <div><span>Your drive</span><code>Mk I · 85% efficient · useful to 6</code></div>
-      <div><span>Hatched pips</span><code>Over the part's limit, wasted</code></div>
-    </div>
-    <p class="muted">Watch the enemy intent panel. Their torpedo has to be launched nose-on, and while they power it their shields go thin.</p>
+    <p class="muted">When things go wrong, hold <b>Get us out of here</b> once the jump drive is warm. You'll lose the salvage, but keep the ship.</p>
     <div class="ctrl"><button class="btn go" id="start" type="button">Start battle</button></div>
     <p class="muted" id="load-note" hidden></p>
     <div class="keys">Keys: Q/A shields · W/S weapons · E/D engines · J jump · Space pause</div>
@@ -434,7 +378,7 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
       target: { ...def.alloc }, actual: { ...def.alloc },
       x, y, vx: 0, vy: 0, ang: 0, bank: 0,
       orbit: rand(0, Math.PI * 2), orbitDir: Math.random() < 0.5 ? 1 : -1, radius: rand(300, 460), retune: rand(6, 12),
-      mode: 'orbit', modeT: 0, speed: 60, slipX: 0, slipY: 0,
+      mode: 'orbit', modeT: 0, speed: 60, slipX: 0, slipY: 0, jumping: 0,
       wt: def.weapons.map(() => rand(0, 0.4)), tr: def.weapons.map(() => 0),
       flash: 0, spool: 0, dead: false, trail: [], warp: 0
     };
@@ -516,6 +460,7 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
       if (s.downT <= 0) {
         s.downT = 0; s.down = false; s.shield = mx * 0.3;
         log(s === P ? 'Your shields are back online.' : 'Enemy shields rebooted.');
+        crewEvent(s === P ? 'pShieldsUp' : 'eShieldsUp');
       }
     } else {
       if (s.shield > mx) s.shield = Math.max(mx, s.shield - dt * 12);
@@ -566,6 +511,7 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
         missOff: (Math.random() < 0.5 ? -1 : 1) * rand(55, 95), trail: [] };
       p.vx = Math.cos(a0) * w.speed; p.vy = Math.sin(a0) * w.speed;
       log('Torpedo launched at you.');
+      if (s === E) crewEvent('torpLaunch');
     } else {
       // Unguided: aim at where the target will be, flight is a straight line.
       const hc = hitChance(s, w, foe);
@@ -595,7 +541,8 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
 
   function evaded(t, p) {
     pops.push({ x: t.x, y: t.y - 30, text: 'EVADED', color: C.engine, t: 1 });
-    if (t === P) { stats.evaded++; if (p.w.kind === 'torpedo') log('Torpedo evaded.'); }
+    if (t === P) { stats.evaded++; if (p.w.kind === 'torpedo') { log('Torpedo evaded.'); crewEvent('torpEvaded'); } }
+    if (p.src === P && p.w.kind === 'rail') crewEvent('railMiss');
   }
 
   function updateShots(dt) {
@@ -646,6 +593,7 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
         hullD += (sPart - t.shield) / (1 - r);
         t.shield = 0; t.down = true; t.downT = 9;
         log(t === P ? 'Your shields are down!' : 'Enemy shields are down. Hit them hard.');
+        crewEvent(t === P ? 'pShieldsDown' : 'eShieldsDown');
       } else t.shield -= sPart;
       t.flash = 1;
     } else hullD = dmg;
@@ -655,7 +603,8 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
     const col = shielded ? C.shield : (p.w.kind === 'torpedo' ? C.danger : '#ffcf9e');
     burst(p.x, p.y, shielded ? 6 : 12, col, shielded ? 120 : 200);
     pops.push({ x: t.x + rand(-10, 10), y: t.y - 26, text: (hullD > 0.5 ? '-' + hullD.toFixed(0) : 'absorbed'), color: hullD > 0.5 ? C.hull : C.shield, t: 1 });
-    if (p.w.kind === 'torpedo' && t === P) cam.shake = Math.max(cam.shake, 9);
+    if (p.w.kind === 'torpedo' && t === P) { cam.shake = Math.max(cam.shake, 9); crewEvent('torpHit'); }
+    if (p.src === P && p.w.kind === 'rail') crewEvent('railHit');
     if (t.hull <= 0 && !t.dead) kill(t);
   }
 
@@ -664,6 +613,7 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
     for (let i = 0; i < 4; i++) setTimeout(() => burst(s.x + rand(-12, 12), s.y + rand(-12, 12), 30, i % 2 ? C.weapon : '#fff3d6', 320), i * 140);
     cam.shake = 14;
     log(s === P ? 'Hull breached. Kestrel lost.' : 'Corsair destroyed.');
+    crewEvent(s === P ? 'lose' : 'win');
     outcome = s === P ? 'lose' : 'win';
     endTimer = 1.8;
   }
@@ -743,33 +693,35 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
   function updateAI(dt) {
     if (E.dead) return;
     if (!contact) {
-      if (inRange()) { contact = true; log('In weapons range. Engage.'); }
+      if (inRange()) { contact = true; log('In weapons range. Engage.'); crewEvent('inRange'); }
       else return;
     }
     ai.t -= dt;
     if (ai.phase === 'skirmish' && ai.t <= 0) {
       ai.phase = 'torpedo'; E.target = { shields: 1, weapons: 6, engines: 3 };
       log('Enemy is diverting power to weapons.');
+      crewEvent('torpPhase');
     } else if (ai.phase === 'recover' && ai.t <= 0) {
       ai.phase = 'skirmish'; ai.t = rand(14, 20); E.target = { shields: 4, weapons: 4, engines: 2 };
     }
   }
 
-  // ---------- Jump drive: charges with engine power, player triggers it ----------
+  // ---------- Jump drive: charges with engine power; the "Get us out of here" order starts a short countdown ----------
   function updateJump(dt) {
     if (P.dead || P.warp > 0) return;
+    if (P.jumping > 0) {
+      P.jumping -= dt;
+      if (P.jumping <= 0) {
+        P.jumping = 0; P.warp = 0.01; outcome = 'escaped'; endTimer = 1.4;
+        log('Jump drive engaged.');
+        burst(P.x, P.y, 24, C.engine, 260);
+      }
+      return;
+    }
     const r = jumpRate(P);
     if (r > 0.02) P.spool = Math.min(100, P.spool + dt * r);
     else P.spool = Math.max(0, P.spool - dt * 0.5);
-    if (P.spool >= 100 && !jumpReadyLogged) { jumpReadyLogged = true; log('Jump drive charged. Press Jump to escape.'); }
   }
-  function doJump() {
-    if (state !== 'run' || P.spool < 100 || P.dead || P.warp > 0 || outcome) return;
-    P.warp = 0.01; outcome = 'escaped'; endTimer = 1.4;
-    log('Jump drive engaged.');
-    burst(P.x, P.y, 24, C.engine, 260);
-  }
-
 
   // ---------- Effects bookkeeping (particles and damage numbers) ----------
   function updateFx(dt) {
@@ -1204,60 +1156,231 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
     }
   });
 
-  const intentEl = document.getElementById('intent');
-  const jumpBtn = document.getElementById('jump');
+  // ---------- Crew voices ----------
+  // Each crew member shows one line at a time. Urgent lines (higher prio) interrupt; every line has a cooldown so nobody nags.
+  // When nobody is talking, their slot shows a plain status readout for their station.
+  const CREW = ['tally', 'fergus', 'dot', 'juno'];
+  const voice = {}, saidAt = {}, later = [];
+  let pollT = 0;
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+  function crewReset() {
+    CREW.forEach(id => { voice[id] = { text: '', until: -1, prio: 0 }; });
+    for (const k in saidAt) delete saidAt[k];
+    later.length = 0; pollT = 0;
+  }
+  crewReset();
+  function say(id, text, o) {
+    o = o || {};
+    const key = o.key || text, cd = o.cd === undefined ? 15 : o.cd, prio = o.prio || 1, dur = o.dur || 5.5;
+    if (saidAt[key] !== undefined && time - saidAt[key] < cd) return false;
+    const v = voice[id];
+    if (time < v.until && v.prio > prio) return false;
+    v.text = text; v.until = time + dur; v.prio = prio; saidAt[key] = time;
+    return true;
+  }
+  const sayLater = (delay, id, text, o) => later.push({ at: time + delay, id, text, o });
+
+  // One-off moments, called from the battle code.
+  function crewEvent(ev) {
+    const rail = P.def.weapons[1];
+    switch (ev) {
+      case 'start':
+        say('tally', pick(["Contact! One Corsair gunship, coming our way.", "Bandit ahead! Corsair gunship. Ugly one, too."]), { prio: 2 });
+        sayLater(1.4, 'juno', pick(["Nice day for it.", "Seatbelts, everyone."]), { prio: 1, dur: 4 });
+        sayLater(2.4, 'fergus', "Shields are warm. Don't break them.", { prio: 1, dur: 4 });
+        break;
+      case 'inRange':
+        say('tally', pick(["We're in range. Here we go!", "In range! Everyone look busy."]), { prio: 2 });
+        break;
+      case 'torpPhase':
+        say('tally', pick(["Ooh, they're pulling power off shields. That's a torpedo face.", "They're powering up something nasty. Torpedo, I reckon."]), { prio: 3 });
+        if (weaponOnline(P, rail)) sayLater(1.2, 'dot', "Their shields are thinning. Doris is interested.", { prio: 2 });
+        break;
+      case 'torpLaunch':
+        say('tally', pick(["Torpedo away! Incoming!", "Torpedo! Torpedo! That's the one!"]), { prio: 4, dur: 4 });
+        sayLater(5, 'tally', "They're putting it all back into shields. Window's closing.", { prio: 2, key: 'recover', cd: 20 });
+        break;
+      case 'torpEvaded':
+        say('juno', pick(["Hmm hmm hmm... dodged.", "Not today, torpedo.", "Missed by a mile. Well, a metre."]), { prio: 3, key: 'jEv', cd: 4 });
+        sayLater(0.8, 'tally', "Missed us! Ha!", { prio: 2, key: 'tEv', cd: 4 });
+        break;
+      case 'torpHit':
+        say('tally', pick(["Ow. That one landed.", "Direct hit. On us. Wrong direction."]), { prio: 3, key: 'tHit', cd: 4 });
+        sayLater(0.9, 'fergus', pick(["She's still flying. Mostly.", "That's going to need tape."]), { prio: 3, key: 'fHit', cd: 4 });
+        break;
+      case 'enemyRecover':
+        say('tally', "They're putting it all back into shields. Window's closing.", { prio: 2, cd: 20 });
+        break;
+      case 'eShieldsDown':
+        say('tally', pick(["Their shields are down! Hit them!", "Shields down on the Corsair! Now's our chance!"]), { prio: 4, key: 'eDown', cd: 6 });
+        if (P.target.weapons < 6) sayLater(0.7, 'dot', "Their shields are down! More power to the guns!", { prio: 4, key: 'dotKill', cd: 12 });
+        break;
+      case 'eShieldsUp':
+        say('tally', "Their shields are back up. Boo.", { prio: 2, cd: 10 });
+        break;
+      case 'pShieldsDown':
+        say('fergus', `Shields are down! Feed her and she'll be back in ${Math.ceil(P.downT / (0.6 + 0.15 * Math.max(eff(P, 'shields'), 0.4)))}.`, { prio: 4, key: 'shDown', cd: 6 });
+        break;
+      case 'pShieldsUp':
+        say('fergus', pick(["Shields back up. Good girl.", "Shields are back. You're welcome."]), { prio: 2, cd: 8 });
+        break;
+      case 'railHit':
+        say('dot', pick(["Doris says hello.", "Doris connects!", "Ooh, that one stung them."]), { prio: 2, key: 'railHit', cd: 5 });
+        break;
+      case 'railMiss':
+        say('dot', pick(["Doris missed. She's embarrassed.", "Wide! Doris blames the pilot."]), { prio: 2, key: 'railMiss', cd: 5 });
+        if (Math.random() < 0.5) sayLater(1.1, 'juno', "I heard that.", { prio: 1, key: 'heard', cd: 30, dur: 3 });
+        break;
+      case 'win':
+        say('tally', pick(["Got 'em! Salvage time!", "Corsair down! Drinks are on Fergus!"]), { prio: 5, dur: 9 });
+        sayLater(1, 'fergus', "Drinks are not on Fergus.", { prio: 5, dur: 8 });
+        sayLater(1.6, 'dot', "Good work, Doris.", { prio: 5, dur: 8 });
+        break;
+      case 'lose':
+        say('fergus', "Abandon ship! Calmly! In an orderly fashion!", { prio: 5, dur: 9 });
+        sayLater(0.6, 'tally', "Mayday, mayday!", { prio: 5, dur: 8 });
+        break;
+      case 'jumpOrder':
+        say('tally', "Juno! Get us out of here!", { prio: 5, dur: 4 });
+        sayLater(0.8, 'juno', pick(["Way ahead of you.", "Say no more. Hold onto something."]), { prio: 5, dur: 4 });
+        sayLater(1.6, 'dot', "Doris and I were just getting started...", { prio: 5, dur: 4 });
+        break;
+    }
+  }
+
+  // Ongoing situations, checked a couple of times a second.
+  function crewPoll() {
+    if (!contact) {
+      if (time > 6) say('tally', `They're closing. ${Math.max(0, (distance() - RANGE) / 100).toFixed(0)} clicks to weapons range. Set us up, Captain.`, { key: 'closing', cd: 30 });
+      return;
+    }
+    const torp = E.def.weapons[1], torpPct = E.wt[1] / torp.interval;
+    const torpInbound = shots.some(s => s.w.kind === 'torpedo' && s.tgt === P && s.homing);
+    const T = P.target, laser = P.def.weapons[0], rail = P.def.weapons[1];
+    const torpThreat = torpInbound || (ai.phase === 'torpedo' && weaponOnline(E, torp) && torpPct >= 0.75);
+
+    // Tally: the enemy
+    if (ai.phase === 'torpedo' && weaponOnline(E, torp) && torpPct > 0.5 && torpPct < 1) say('tally', "Torpedo's half charged. Just saying.", { key: 'torpHalf', cd: 20, prio: 2 });
+    if (ai.phase === 'torpedo' && torpPct >= 1) say('tally', "Torpedo armed! They're swinging their nose round.", { key: 'torpArmed', cd: 20, prio: 3 });
+    if (E.hull < E.def.hullMax * 0.3 && !E.dead) say('tally', pick(["They're smoking. Keep it up!", "Corsair's on fire. In space. Somehow."]), { key: 'eLow', cd: 60, prio: 2 });
+
+    // Juno: engines
+    if (torpThreat && T.engines < 3) say('juno', "Torpedo coming. Engines would be lovely, no pressure.", { key: 'junoTorp', cd: 18, prio: 3 });
+    if (weaponOnline(P, rail) && P.wt[1] >= rail.interval && !inArc(P, rail, 1, E) && eff(P, 'engines') < 1.8) say('juno', "I can't line up Doris on these engines.", { key: 'junoRail', cd: 30 });
+    if (T.engines > P.def.parts.engines.cap) say('juno', `The drive tops out at ${P.def.parts.engines.cap}. You're just making it warm.`, { key: 'engCap', cd: 25 });
+    if (P.spool >= 100 && !P.jumping) say('juno', "Jump drive's warm, Captain. Say the word.", { key: 'jumpReady', cd: 90, prio: 2 });
+
+    // Dot: weapons
+    if (E.down && T.weapons < 6) say('dot', "Their shields are down! More power to the guns!", { key: 'dotKill', cd: 12, prio: 3 });
+    else if (!weaponOnline(P, rail) && T.weapons < rail.min && !torpThreat) say('dot', "Doris needs 4 power. She won't get out of bed for less.", { key: 'dotRail', cd: 35 });
+    if (T.weapons === 0) say('dot', "Guns are cold. Just so you know.", { key: 'dotCold', cd: 30 });
+    if (weaponOnline(P, laser) && hitChance(P, laser, E) < 0.35) say('dot', "Long shots only. One in three if I'm lucky.", { key: 'dotFar', cd: 40 });
+    if (T.weapons > P.def.parts.weapons.cap) say('dot', `Doris maxes out at ${P.def.parts.weapons.cap}. The rest is just noise.`, { key: 'wCap', cd: 25 });
+
+    // Fergus: shields
+    if (P.down) { /* handled by the shields-down event */ }
+    else if (T.shields === 0) say('fergus', "No power to shields? Bold.", { key: 'shZero', cd: 30, prio: 2 });
+    else if (torpThreat && T.shields < 4) say('fergus', "Torpedo incoming. Shields or engines, Captain. I know which I'd pick.", { key: 'fTorp', cd: 20, prio: 3 });
+    else if (P.shield < shieldMax(P) * 0.3 && T.shields < 5) say('fergus', "Shields are sweating. Another point wouldn't hurt.", { key: 'shLow', cd: 25, prio: 2 });
+    if (T.shields > P.def.parts.shields.cap) say('fergus', `She can't use more than ${P.def.parts.shields.cap}. You're just warming the pipes.`, { key: 'shCap', cd: 25 });
+    if (P.hull < P.def.hullMax * 0.3 && !P.dead) say('fergus', "Hull's held together with tape and hope.", { key: 'hullLow', cd: 60, prio: 2 });
+  }
+
+  function crewUpdate(dt) {
+    for (let i = later.length - 1; i >= 0; i--) if (time >= later[i].at) { const l = later.splice(i, 1)[0]; say(l.id, l.text, l.o); }
+    pollT -= dt;
+    if (pollT <= 0) { pollT = 0.5; crewPoll(); }
+  }
+
+  // Status readouts when a crew member isn't talking.
+  function idleText(id) {
+    if (id === 'tally') {
+      if (state === 'title') return 'Scanning…';
+      if (E.dead) return 'Nothing left of them but salvage.';
+      if (!contact) return `Corsair closing · ${distance().toFixed(0)} out, range ${RANGE}`;
+      if (ai.phase === 'torpedo') {
+        const t = E.def.weapons[1], pct = E.wt[1] / t.interval;
+        return !weaponOnline(E, t) ? 'Corsair powering a torpedo' : pct < 1 ? `Torpedo charging ${Math.floor(pct * 100)}%` : 'Torpedo armed, lining up';
+      }
+      if (E.down) return 'Corsair shields down';
+      if (ai.phase === 'recover') return 'Corsair raising shields';
+      return 'Corsair autocannon fire';
+    }
+    if (id === 'fergus') {
+      if (eff(P, 'shields') < 0.4) return '<span class="off">Shields offline</span>';
+      if (P.down) return `<span class="off">Shields down</span> · back in <b>${(P.downT / (0.6 + 0.15 * eff(P, 'shields'))).toFixed(1)}s</b>`;
+      return `Shield <b>${P.shield.toFixed(0)}/${shieldMax(P).toFixed(0)}</b> · regen <b>${regen(P).toFixed(1)}</b>/s · resist <b>${(resist(P) * 100).toFixed(0)}%</b>`;
+    }
+    if (id === 'dot') {
+      const [laser, rail] = P.def.weapons, ls = weaponStatus(P, laser, 0, E), rs = weaponStatus(P, rail, 1, E);
+      const l = weaponOnline(P, laser) ? `Laser <b>${(hitChance(P, laser, E) * 100).toFixed(0)}%</b> ${ls.text}` : '<span class="off">Laser off</span>';
+      const r = weaponOnline(P, rail) ? `Doris <b>${(hitChance(P, rail, E) * 100).toFixed(0)}%</b> ${rs.text}` : `<span class="off">Doris needs ${rail.min}</span>`;
+      return l + ' · ' + r;
+    }
+    return `Evade <b>${(evasion(P) * 100).toFixed(0)}%</b> · turn <b>${turnRate(P).toFixed(0)}°/s</b> · jump <b>${Math.floor(P.spool)}%</b>`;
+  }
+  const lineEls = {}, faceEls = {}, lastHTML = {};
+  CREW.forEach(id => { lineEls[id] = document.getElementById('line-' + id); faceEls[id] = document.getElementById('face-' + id); });
+  function renderCrew() {
+    CREW.forEach(id => {
+      const v = voice[id], talking = state !== 'title' && time < v.until;
+      const html = talking ? v.text.replace(/&/g, '&amp;').replace(/</g, '&lt;') : idleText(id);
+      const key = (talking ? 'T' : 'I') + html;
+      if (lastHTML[id] !== key) {
+        lastHTML[id] = key;
+        lineEls[id].innerHTML = html;
+        lineEls[id].classList.toggle('talk', talking);
+        lineEls[id].classList.toggle('alert', talking && v.prio >= 4);
+        faceEls[id].classList.toggle('talk', talking);
+      }
+    });
+  }
+
+  // ---------- Orders (given through comms) ----------
+  // Data-driven so more orders (brace, target their engines, hail...) can be added later.
+  const ORDERS = [{
+    id: 'jump', label: 'Get us out of here', holdTime: 0.9,
+    ready: () => state === 'run' && P.spool >= 100 && !P.jumping && !outcome && !P.dead,
+    progress: () => P.spool / 100,
+    hint: () => P.jumping ? 'Jumping…' : P.spool >= 100 ? 'Hold to jump · lose the salvage' : `Jump drive ${Math.floor(P.spool)}%`,
+    run: () => { P.jumping = 2.2; crewEvent('jumpOrder'); }
+  }];
+  const ordersEl = document.getElementById('orders');
+  ORDERS.forEach(o => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'order'; b.id = 'order-' + o.id;
+    b.innerHTML = `<span class="lab">${o.label}</span><span class="hint"></span>`;
+    o.el = b; o.hintEl = b.querySelector('.hint'); o.holding = null;
+    const cancel = () => { o.holding = null; b.style.setProperty('--h', 0); };
+    b.addEventListener('pointerdown', ev => { if (!o.ready()) return; ev.preventDefault(); o.holding = performance.now(); try { b.setPointerCapture(ev.pointerId); } catch (e) {} });
+    b.addEventListener('pointerup', cancel); b.addEventListener('pointercancel', cancel); b.addEventListener('lostpointercapture', cancel);
+    b.addEventListener('keydown', ev => { if ((ev.key === 'Enter' || ev.key === ' ') && o.ready()) { ev.preventDefault(); ev.stopPropagation(); o.run(); } });
+    ordersEl.appendChild(b);
+  });
+  function renderOrders() {
+    ORDERS.forEach(o => {
+      const r = o.ready();
+      if (o.holding && r) {
+        const h = (performance.now() - o.holding) / 1000 / o.holdTime;
+        o.el.style.setProperty('--h', Math.min(1, h).toFixed(3));
+        if (h >= 1) { o.holding = null; o.el.style.setProperty('--h', 0); o.run(); }
+      } else if (o.holding) { o.holding = null; o.el.style.setProperty('--h', 0); }
+      o.el.classList.toggle('ready', r);
+      o.el.setAttribute('aria-disabled', r ? 'false' : 'true');
+      o.el.style.setProperty('--p', clamp(o.progress(), 0, 1).toFixed(3));
+      const ht = o.hint(); if (o.hintEl.textContent !== ht) o.hintEl.textContent = ht;
+    });
+  }
+
   function updateHUD() {
-    const pmx = shieldMax(P);
+    const pmx = shieldMax(P), emx = shieldMax(E);
     setBar('p-hull', P.hull, P.def.hullMax, P.hull.toFixed(0), P.hull < P.def.hullMax * 0.3);
     setBar('p-sh', P.down ? 0 : P.shield, Math.max(pmx, 1), P.down ? 'DOWN' : P.shield.toFixed(0), P.down);
-    setBar('p-ftl', P.spool, 100, Math.floor(P.spool) + '%');
-    const pn = document.getElementById('p-note');
-    const torpIn = shots.some(s => s.w.kind === 'torpedo' && s.tgt === P && s.homing);
-    if (torpIn) { pn.textContent = 'Torpedo inbound. Engines to dodge, shields to absorb.'; pn.className = 'note alert'; }
-    else if (P.down) { pn.textContent = `Shields rebooting, ${Math.max(0, P.downT / (0.6 + 0.15 * eff(P, 'shields'))).toFixed(1)}s at current power.`; pn.className = 'note alert'; }
-    else if (P.spool >= 100) { pn.textContent = 'Jump drive charged. Jumping forfeits the salvage.'; pn.className = 'note'; }
-    else { pn.textContent = 'Engine power slowly charges the jump drive.'; pn.className = 'note'; }
-
-    const ready = P.spool >= 100 && state === 'run' && !outcome;
-    jumpBtn.disabled = !ready;
-    jumpBtn.classList.toggle('ready', ready);
-    jumpBtn.textContent = P.spool >= 100 ? 'Jump ready' : `Jump ${Math.floor(P.spool)}%`;
-
-    const emx = shieldMax(E);
     setBar('e-hull', E.hull, E.def.hullMax, E.hull.toFixed(0), E.hull < E.def.hullMax * 0.3);
     setBar('e-sh', E.down ? 0 : E.shield, Math.max(emx, 1), E.down ? 'DOWN' : E.shield.toFixed(0), E.down);
     [['s', 'shields'], ['w', 'weapons'], ['e', 'engines']].forEach(([c, k]) => {
-      document.getElementById('es-' + c).textContent = E.actual[k].toFixed(1);
       document.getElementById('eb-' + c).style.width = (E.actual[k] / E.def.reactor * 100) + '%';
     });
-
-    // Intent
-    const what = document.getElementById('i-what'), note = document.getElementById('i-note'), ib = document.getElementById('i-bar');
-    intentEl.classList.remove('threat', 'open');
-    if (E.dead) { what.textContent = 'Destroyed'; note.textContent = 'Nothing left but salvage.'; ib.hidden = true; }
-    else if (!contact) {
-      what.textContent = 'Closing to range';
-      note.textContent = `Distance ${distance().toFixed(0)} · weapons range ${RANGE}. Set your power now.`;
-      ib.hidden = true;
-    }
-    else if (ai.phase === 'torpedo') {
-      const torp = E.def.weapons[1];
-      const pct = E.wt[1] / torp.interval;
-      if (!weaponOnline(E, torp)) { what.textContent = 'Powering torpedo'; note.textContent = 'Power is moving into their weapons. Their shields are dropping.'; }
-      else if (pct < 1) { what.textContent = `Torpedo charging ${Math.floor(pct * 100)}%`; note.textContent = `About ${weaponDmg(E, torp).toFixed(0)} damage, hard to dodge. Their shields are running thin.`; }
-      else { what.textContent = 'Torpedo armed, lining up'; note.textContent = 'They need their nose on you to launch. Engines make you harder to line up.'; }
-      ib.hidden = false; ib.querySelector('em').style.width = (pct * 100) + '%';
-      intentEl.classList.add('threat');
-    } else if (E.down) {
-      what.textContent = 'Shields down'; note.textContent = 'Their shields are rebooting. Your damage goes straight to hull.'; ib.hidden = true;
-      intentEl.classList.add('open');
-    } else if (ai.phase === 'recover') {
-      what.textContent = 'Raising shields'; note.textContent = 'They are pulling power back into shields after the torpedo.'; ib.hidden = true;
-    } else {
-      what.textContent = 'Autocannon fire'; note.textContent = 'Turret fire with balanced shields. Their turret traverses slowly.'; ib.hidden = true;
-    }
-
-    // Console
     const used = SYS.reduce((a, k) => a + P.target[k], 0);
     document.getElementById('free').textContent = P.def.reactor - used;
     SYS.forEach(k => {
@@ -1266,24 +1389,19 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
         d.classList.toggle('tgt', i < P.target[k]);
       });
     });
-    const es = eff(P, 'shields');
-    document.getElementById('read-shields').innerHTML = es < 0.4
-      ? '<span class="off">Offline</span> · no shield, no reboot'
-      : `Max <b>${shieldMax(P).toFixed(0)}</b> · regen <b>${regen(P).toFixed(1)}</b>/s<span class="r2">Resist <b>${(resist(P) * 100).toFixed(0)}%</b></span>`;
-    const [laser, rail] = P.def.weapons;
-    const ls = weaponStatus(P, laser, 0, E), rs = weaponStatus(P, rail, 1, E);
-    document.getElementById('read-weapons').innerHTML =
-      (weaponOnline(P, laser) ? `Laser <b>${weaponDmg(P, laser).toFixed(1)}</b> · hit <b>${(hitChance(P, laser, E) * 100).toFixed(0)}%</b> · ${ls.text}` : `Laser <span class="off">${ls.text}</span>`) + '<br>' +
-      (weaponOnline(P, rail) ? `Rail <b>${weaponDmg(P, rail).toFixed(0)}</b> · hit <b>${(hitChance(P, rail, E) * 100).toFixed(0)}%</b> · ${rs.text}` : `Rail <span class="off">${rs.text}</span>`);
-    document.getElementById('read-engines').innerHTML =
-      `Evasion <b>${(evasion(P) * 100).toFixed(0)}%</b> · torp <b>${(evasion(P) * 0.55 * 100).toFixed(0)}%</b><span class="r2">` +
-      `Turn <b>${turnRate(P).toFixed(0)}°/s</b> · jump <b>+${jumpRate(P).toFixed(1)}%</b>/s</span>`;
+    renderCrew();
+    renderOrders();
   }
 
   // ---------- Overlays & input ----------
   const titleEl = document.getElementById('title'), endEl = document.getElementById('end');
   const pauseBtn = document.getElementById('pause');
-  function start() { reset(); titleEl.hidden = true; endEl.hidden = true; state = 'run'; pauseBtn.textContent = 'Pause'; log('Corsair gunship detected. Closing to weapons range.'); }
+  function start() {
+    reset(); crewReset();
+    titleEl.hidden = true; endEl.hidden = true; state = 'run'; pauseBtn.textContent = 'Pause';
+    log('Corsair gunship detected. Closing to weapons range.');
+    crewEvent('start');
+  }
   document.getElementById('start').addEventListener('click', start);
   document.getElementById('again').addEventListener('click', start);
   function togglePause() {
@@ -1291,13 +1409,13 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
     else if (state === 'paused') { state = 'run'; pauseBtn.textContent = 'Pause'; }
   }
   pauseBtn.addEventListener('click', togglePause);
-  jumpBtn.addEventListener('click', doJump);
   document.querySelectorAll('.pw').forEach(b => b.addEventListener('click', () => adjust(b.dataset.k, +b.dataset.d)));
   const keymap = { q: ['shields', 1], a: ['shields', -1], w: ['weapons', 1], s: ['weapons', -1], e: ['engines', 1], d: ['engines', -1] };
   window.addEventListener('keydown', ev => {
+    if (ev.target && ev.target.classList && ev.target.classList.contains('order')) return;
     if (ev.key === ' ') { ev.preventDefault(); togglePause(); return; }
     if (ev.key === 'Enter' && state === 'title') { start(); return; }
-    if (ev.key.toLowerCase() === 'j') { doJump(); return; }
+    if (ev.key.toLowerCase() === 'j') { const o = ORDERS[0]; if (o.ready()) o.run(); return; }
     const m = keymap[ev.key.toLowerCase()];
     if (m) adjust(m[0], m[1]);
   });
@@ -1305,9 +1423,9 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
   function showEnd() {
     state = 'over';
     const t = document.getElementById('end-title'), x = document.getElementById('end-text'), eb = document.getElementById('end-eyebrow');
-    if (outcome === 'win') { eb.textContent = 'Victory'; t.textContent = 'Corsair destroyed'; x.textContent = 'The wreck is yours to strip. In the full game this is where salvage, repairs and upgrades happen.'; }
-    else if (outcome === 'lose') { eb.textContent = 'Defeat'; t.textContent = 'Kestrel lost'; x.textContent = 'Watch the torpedo: brace with shields or keep engines up so they struggle to line it up, then punish their thin shields.'; }
-    else { eb.textContent = 'Escaped'; t.textContent = 'Jumped clear'; x.textContent = 'You lived, but the salvage stays behind. Sometimes that is the right call.'; }
+    if (outcome === 'win') { eb.textContent = 'Victory'; t.textContent = 'Corsair destroyed'; x.textContent = "The wreck is yours to strip. Fergus is already eyeing their shield generator."; }
+    else if (outcome === 'lose') { eb.textContent = 'Defeat'; t.textContent = 'Kestrel lost'; x.textContent = "Everyone made it to the escape pods. Juno is humming. Tip: when Tally calls a torpedo, give Fergus shields or Juno engines, then punish their thin shields."; }
+    else { eb.textContent = 'Escaped'; t.textContent = 'Jumped clear'; x.textContent = "You lived, but the salvage stays behind. Dot is sulking. Sometimes that's the right call."; }
     document.getElementById('st-time').textContent = time.toFixed(0) + 's';
     document.getElementById('st-dealt').textContent = stats.dealt.toFixed(0);
     document.getElementById('st-taken').textContent = stats.taken.toFixed(0);
@@ -1343,6 +1461,7 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
       updateWeapons(P, E, dt); updateWeapons(E, P, dt);
       updateShots(dt);
       updateJump(dt);
+      crewUpdate(dt);
       if (outcome) { endTimer -= dt; if (endTimer <= 0) showEnd(); }
     }
     if (live) { updateMove(P, E, dt); updateMove(E, P, dt); }
