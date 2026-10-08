@@ -11,7 +11,7 @@
 :root{
   color-scheme: dark;
   --void:#05070c;
-  --panel:rgba(10,15,24,.84);
+  --panel:rgba(10,15,24,.58);
   --panel-solid:#0b111b;
   --line:rgba(140,175,210,.18);
   --ink:#dbe5ee;
@@ -35,7 +35,8 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
 .hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;gap:12px;
   padding:calc(12px + env(safe-area-inset-top,0px)) 16px calc(12px + env(safe-area-inset-bottom,0px))}
 .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
-.panel{pointer-events:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.panel{pointer-events:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.sys-read .r2{display:block}
 .status{width:min(300px,calc(50vw - 22px));display:grid;gap:7px;min-width:0}
 .status h2{margin:0;font-family:var(--f-display);font-weight:700;font-size:15px;letter-spacing:.14em;text-transform:uppercase;display:flex;justify-content:space-between;gap:8px}
 .status h2 small{font-weight:500;color:var(--dim);letter-spacing:.08em}
@@ -222,6 +223,20 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
   .sys-read{font-size:9.5px;line-height:1.3}
   .keys,.loadout{display:none}
   .card{padding:18px;gap:12px}
+  .panel{background:rgba(8,12,20,.38);border-color:rgba(140,175,210,.12)}
+  .status{width:auto;min-width:0;flex:0 1 46%}
+  .status h2 small{display:none}
+  #p-ftl{display:none}
+  .intent .note,.intent .ibar{display:none}
+  .intent{border-top:0;padding-top:0}
+  #log div:nth-last-child(n+2){display:none}
+  .console{padding:6px 8px;gap:4px}
+  .systems{gap:4px}
+  .sys{grid-template-columns:58px 1fr}
+  .sys-row{grid-template-columns:34px 1fr 34px;gap:4px}
+  .pw{height:30px}
+  .pip{height:14px}
+  #read-shields .r2,#read-engines .r2{display:none}
 }
 </style>
 
@@ -819,11 +834,13 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
     const flash = new THREE.PointLight(0xffc890, 0, 900, 2); flash.position.set(0, 40, 0); scene.add(flash);
 
     // Starfield in depth layers below the battle plane, so the camera move gives real parallax.
-    [[-700, 900, 1.2, 0.55], [-1800, 900, 1.6, 0.7], [-3600, 1100, 2.1, 0.9]].forEach(([y, n, sz, op]) => {
+    // Stars: soft round dots. Three.js already scales point size by the pixel ratio, so sizes here are CSS pixels.
+    const starTex = radialTex([[0, 'rgba(255,255,255,1)'], [0.35, 'rgba(255,255,255,0.55)'], [1, 'rgba(255,255,255,0)']], 32);
+    [[-700, 900, 1.6, 0.55], [-1800, 900, 2.0, 0.7], [-3600, 1100, 2.6, 0.85]].forEach(([y, n, sz, op]) => {
       const pos = new Float32Array(n * 3);
       for (let i = 0; i < n; i++) { pos[i * 3] = rand(-9000, 9000); pos[i * 3 + 1] = y + rand(-200, 200); pos[i * 3 + 2] = rand(-9000, 9000); }
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xcfe0ff, size: sz * DPR, sizeAttenuation: false, transparent: true, opacity: op, depthWrite: false })));
+      scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xcfe0ff, map: starTex, size: sz, sizeAttenuation: false, transparent: true, opacity: op, depthWrite: false })));
     });
     const nebTex = radialTex([[0, 'rgba(255,255,255,0.9)'], [0.4, 'rgba(255,255,255,0.25)'], [1, 'rgba(255,255,255,0)']], 256);
     [[0x3c2870, -2600, -1400, 9000], [0x14506e, 2800, 1600, 8000]].forEach(([col, x, z, s]) => {
@@ -1252,15 +1269,15 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
     const es = eff(P, 'shields');
     document.getElementById('read-shields').innerHTML = es < 0.4
       ? '<span class="off">Offline</span> · no shield, no reboot'
-      : `Max <b>${shieldMax(P).toFixed(0)}</b> · regen <b>${regen(P).toFixed(1)}</b>/s<br>Resist <b>${(resist(P) * 100).toFixed(0)}%</b>`;
+      : `Max <b>${shieldMax(P).toFixed(0)}</b> · regen <b>${regen(P).toFixed(1)}</b>/s<span class="r2">Resist <b>${(resist(P) * 100).toFixed(0)}%</b></span>`;
     const [laser, rail] = P.def.weapons;
     const ls = weaponStatus(P, laser, 0, E), rs = weaponStatus(P, rail, 1, E);
     document.getElementById('read-weapons').innerHTML =
       (weaponOnline(P, laser) ? `Laser <b>${weaponDmg(P, laser).toFixed(1)}</b> · hit <b>${(hitChance(P, laser, E) * 100).toFixed(0)}%</b> · ${ls.text}` : `Laser <span class="off">${ls.text}</span>`) + '<br>' +
       (weaponOnline(P, rail) ? `Rail <b>${weaponDmg(P, rail).toFixed(0)}</b> · hit <b>${(hitChance(P, rail, E) * 100).toFixed(0)}%</b> · ${rs.text}` : `Rail <span class="off">${rs.text}</span>`);
     document.getElementById('read-engines').innerHTML =
-      `Evasion <b>${(evasion(P) * 100).toFixed(0)}%</b> · torp <b>${(evasion(P) * 0.55 * 100).toFixed(0)}%</b><br>` +
-      `Turn <b>${turnRate(P).toFixed(0)}°/s</b> · jump <b>+${jumpRate(P).toFixed(1)}%</b>/s`;
+      `Evasion <b>${(evasion(P) * 100).toFixed(0)}%</b> · torp <b>${(evasion(P) * 0.55 * 100).toFixed(0)}%</b><span class="r2">` +
+      `Turn <b>${turnRate(P).toFixed(0)}°/s</b> · jump <b>+${jumpRate(P).toFixed(1)}%</b>/s</span>`;
   }
 
   // ---------- Overlays & input ----------
