@@ -188,6 +188,41 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
   .go{font-size:14px;padding:9px 16px}
 }
 
+
+/* Phone in portrait: battle in the middle, power controls stacked at the bottom within thumb reach. */
+@media (max-width:640px){
+  .hud{padding:calc(8px + env(safe-area-inset-top,0px)) 10px calc(8px + env(safe-area-inset-bottom,0px));gap:6px}
+  .top{gap:8px}
+  .panel{padding:7px 9px}
+  .status{width:calc(50vw - 15px);gap:4px}
+  .status h2{font-size:12px}
+  .bar{grid-template-columns:36px 1fr 30px;gap:5px;font-size:10px}
+  .bar .track{height:5px}
+  #p-note{display:none}
+  .scan{gap:4px}
+  .scan span{font-size:8.5px;letter-spacing:.06em}
+  .intent{padding-top:5px;gap:2px}
+  .intent .lbl{display:none}
+  .intent .what{font-size:13px;line-height:1.15}
+  .intent .note{font-size:10px;line-height:1.25}
+  #log{min-height:0;gap:0}
+  #log div{font-size:10.5px}
+  #log div:nth-last-child(n+3){display:none}
+  .console{gap:6px;padding:8px 10px}
+  .console-head h3{display:none}
+  .reactor{font-size:11px}
+  .btn{padding:7px 10px;font-size:12px}
+  .btn.jump{min-width:96px}
+  .systems{gap:6px}
+  .sys{grid-template-columns:64px 1fr;column-gap:8px;row-gap:1px}
+  .sys-name{font-size:12px}
+  .sys-row{grid-template-columns:38px 1fr 38px;gap:5px}
+  .pw{height:34px}
+  .pip{height:18px}
+  .sys-read{font-size:9.5px;line-height:1.3}
+  .keys,.loadout{display:none}
+  .card{padding:18px;gap:12px}
+}
 </style>
 
 </head>
@@ -1086,7 +1121,11 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
     const tx = fo ? fo.x : warping ? E.x : (P.x + E.x) / 2, ty = fo ? fo.y : warping ? E.y : (P.y + E.y) / 2;
     const dx = warping ? 0 : Math.abs(P.x - E.x), dy = warping ? 0 : Math.abs(P.y - E.y);
     // Fit both ships; the HUD covers the top and bottom, so the usable height is about 60% of the screen.
-    let D = Math.max((dx / 2 + 170) / (tanH * aspect), (dy / 2 + 150) / (tanH * 0.6));
+    // Portrait screens look along the x axis so the fight runs up and down the screen (your ship starts at the bottom).
+    const portrait = aspect < 1;
+    let D = portrait
+      ? Math.max((dy / 2 + 170) / (tanH * aspect), (dx / 2 + 150) / (tanH * 0.55))
+      : Math.max((dx / 2 + 170) / (tanH * aspect), (dy / 2 + 150) / (tanH * 0.6));
     D = camState.fixD || clamp(D, 320, 4200); // fixD: optional close-up for inspection
     camState.x += (tx - camState.x) * Math.min(1, dt * 3);
     camState.y += (ty - camState.y) * Math.min(1, dt * 3);
@@ -1094,7 +1133,8 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-
     camState.shake = Math.max(0, camState.shake - dt * 20);
     const sh = reduceMotion ? 0 : camState.shake;
     const sx = rand(-sh, sh), sz = rand(-sh, sh);
-    cam.position.set(camState.x + sx, camState.D * Math.cos(CAM_TILT), camState.y + camState.D * Math.sin(CAM_TILT) + sz);
+    if (portrait) cam.position.set(camState.x - camState.D * Math.sin(CAM_TILT) + sx, camState.D * Math.cos(CAM_TILT), camState.y + sz);
+    else cam.position.set(camState.x + sx, camState.D * Math.cos(CAM_TILT), camState.y + camState.D * Math.sin(CAM_TILT) + sz);
     cam.lookAt(camState.x + sx, 0, camState.y + sz);
     GL.flash.intensity = Math.max(0, GL.flash.intensity - dt * 9);
   }
