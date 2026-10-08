@@ -1,0 +1,8 @@
+{
+  "appId": "com.jackdupp007.reactorduel",
+  "appName": "Reactor Duel",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#05070c"
+  }
+}

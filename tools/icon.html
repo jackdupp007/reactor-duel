@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:transparent}</style></head><body>
+<canvas id="c" width="1024" height="1024" style="width:1024px;height:1024px"></canvas>
+<script src="../www/lib/three.min.js"></script><script src="../www/lib/GLTFLoader.js"></script>
+<script>
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), alpha: true, antialias: true, preserveDrawingBuffer: true });
+r.setClearColor(0x000000, 0); r.outputEncoding = THREE.sRGBEncoding; r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 0.95;
+const s = new THREE.Scene();
+const cam = new THREE.OrthographicCamera(-0.6, 0.6, 0.6, -0.6, 0.01, 10); cam.position.set(0, 3, 0.9); cam.lookAt(0, 0, 0);
+s.add(new THREE.HemisphereLight(0x9fb4d8, 0x14121c, 0.6));
+const k = new THREE.DirectionalLight(0xfff0dd, 1.6); k.position.set(-1, 2, -0.6); s.add(k);
+const rim = new THREE.DirectionalLight(0x9a7bff, 1.2); rim.position.set(1.2, 0.5, 1.4); s.add(rim);
+new THREE.GLTFLoader().load('../www/models/kestrel.json', g => {
+  const ship = g.scene; ship.traverse(o => { if (o.isMesh) o.material.metalness = Math.min(o.material.metalness, 0.45); });
+  ship.rotation.y = Math.PI + Math.PI / 4;   // nose toward the upper right
+  const grp = new THREE.Group(); grp.add(ship); grp.rotation.z = 0.12; grp.position.y = -0.08; s.add(grp);
+  r.render(s, cam); window.done = true;
+});
+</script></body></html>

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Reactor Duel</string>
+    <string name="title_activity_main">Reactor Duel</string>
+    <string name="package_name">com.jackdupp007.reactorduel</string>
+    <string name="custom_url_scheme">com.jackdupp007.reactorduel</string>
+</resources>

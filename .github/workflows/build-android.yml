@@ -1,0 +1,56 @@
+name: Build Android app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install packages
+        run: npm ci
+
+      - name: Copy the game into the Android project
+        run: npx cap sync android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Build the app file
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Name the app file
+        run: cp android/app/build/outputs/apk/release/app-release.apk reactor-duel.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reactor-duel-apk
+          path: reactor-duel.apk
+
+      - name: Publish to the "latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Reactor Duel (latest build)
+          body: |
+            Build ${{ github.run_number }} from commit ${{ github.sha }}.
+            On your phone, download **reactor-duel.apk** below and open it to install or update.
+          make_latest: true
+          files: reactor-duel.apk
