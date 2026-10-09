@@ -7,16 +7,16 @@
 <title>Reactor Duel</title>
 <link rel="stylesheet" href="fonts/fonts.css">
 <style>
-/* Layout: battle canvas full-bleed. Top = read-only (comms strip + ship bars). Bottom = every control (orders + three power rows with their crew).
-   Deliberately single dark theme (cockpit display). */
+/* Layout: battle canvas full-bleed. Top = read-only ship stats, no boxes. Bottom = crew chatter bubbles rising above the
+   console, then every control. Deliberately single dark theme (cockpit display). */
 :root{
   color-scheme: dark;
   --void:#05070c;
-  --panel:rgba(10,15,24,.58);
+  --panel:rgba(8,12,20,.5);
   --panel-solid:#0b111b;
   --line:rgba(140,175,210,.16);
   --ink:#dbe5ee;
-  --dim:#7b8ea3;
+  --dim:#8a9bb0;
   --shield:#52c8ff;
   --weapon:#ff9442;
   --engine:#b48cff;
@@ -26,99 +26,100 @@
   --f-display:"Saira Condensed","Arial Narrow",sans-serif;
   --f-body:"Saira",system-ui,sans-serif;
   --f-data:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --shadow:0 1px 2px rgba(0,0,0,.9),0 0 8px rgba(0,0,0,.6);
 }
 [hidden]{display:none!important}
 html,body{height:100%}
 body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);overflow:hidden;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
 #game{position:fixed;inset:0;width:100%;height:100%;display:block}
-#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none}
 
-.hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;gap:10px;
-  padding:calc(12px + env(safe-area-inset-top,0px)) calc(16px + env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) calc(16px + env(safe-area-inset-left,0px))}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;gap:8px;
+  padding:calc(10px + env(safe-area-inset-top,0px)) calc(14px + env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) calc(14px + env(safe-area-inset-left,0px))}
 
-/* ---- top: read only ---- */
-.top{display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr) minmax(0,230px);grid-template-areas:"mine comms foe";gap:10px;align-items:start}
-.comms{grid-area:comms;justify-self:center;width:min(100%,520px);display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center;padding:8px 12px;--c:var(--comms)}
-.who{font-family:var(--f-display);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
-.who b{color:var(--c);font-weight:700}
-.ship{padding:8px 10px;display:grid;gap:5px;min-width:0}
-.ship.mine{grid-area:mine}
-.ship.foe{grid-area:foe}
-.ship h2{margin:0;font-family:var(--f-display);font-weight:700;font-size:13px;letter-spacing:.16em;text-transform:uppercase;display:flex;justify-content:space-between}
-.ship h2 small{font-weight:500;color:var(--dim);letter-spacing:.1em}
-.bar{display:grid;grid-template-columns:44px 1fr 38px;align-items:center;gap:7px;font-size:10px}
-.bar label{font-family:var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
-.bar .track{height:6px;border-radius:2px;background:rgba(255,255,255,.07);overflow:hidden}
+/* ---- top: read only, no boxes ---- */
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;text-shadow:var(--shadow)}
+.ship{width:min(210px,44vw);display:grid;gap:9px;min-width:0}
+.ship.foe{text-align:right}
+.ship h2{margin:0;font-family:var(--f-display);font-weight:700;font-size:12px;letter-spacing:.18em;text-transform:uppercase;display:flex;gap:8px;align-items:baseline;position:relative}
+.ship.foe h2{justify-content:flex-end}
+.bar{position:relative;display:grid;grid-template-columns:40px 1fr 30px;align-items:center;gap:6px;font-size:10px}
+.bar label{font-family:var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);text-align:left}
+.bar .track{height:4px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.35)}
 .bar .fill{height:100%;width:50%;background:var(--c);transition:width .12s linear}
 .bar output{font-family:var(--f-data);font-variant-numeric:tabular-nums;text-align:right}
 .bar.hullbar{--c:var(--hull)} .bar.shbar{--c:var(--shield)}
 .bar.warn .fill{background:var(--danger)}
-.scan{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
-.scan i{display:block;height:4px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden}
+.scan{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:-3px}
+.scan i{display:block;height:3px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden}
 .scan i em{display:block;height:100%;background:var(--c);width:0}
+.intent{font-family:var(--f-display);font-weight:600;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-top:-4px}
+.intent.threat{color:var(--danger)}
+.intent.open{color:var(--comms)}
 
-/* ---- crew faces + speech ---- */
-.face{width:38px;height:38px;flex:none;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--c);background:rgba(255,255,255,.04);
-  font:700 16px/1 var(--f-display);color:var(--c);transition:box-shadow .2s, transform .2s}
-.face.talk{box-shadow:0 0 0 3px rgba(255,255,255,.08),0 0 14px var(--c);transform:scale(1.06)}
-.say{font-size:12px;line-height:1.3;color:var(--dim);font-family:var(--f-data);font-variant-numeric:tabular-nums;min-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.say b{color:var(--ink);font-weight:500}
-.say .off{color:var(--danger)}
-.say.talk{font-family:var(--f-body);color:var(--ink);white-space:normal}
-.comms .say{font-size:13px}
-.comms .say.alert{color:#ffd0d6}
+/* damage ticks: drop in under the stat they hit, then fade */
+.tick{position:absolute;right:0;top:100%;margin-top:1px;font:500 10px/1 var(--f-data);font-variant-numeric:tabular-nums;color:var(--c);pointer-events:none;animation:tick 1.4s ease-out forwards}
+.ship h2 .tick{top:auto;bottom:-11px;right:auto;left:0;font-family:var(--f-display);letter-spacing:.12em;color:var(--engine)}
+.ship.foe h2 .tick{left:auto;right:0}
+.bar.hullbar .tick{color:#ffb4a8}
+@keyframes tick{0%{opacity:0;transform:translateY(-3px)}12%{opacity:1;transform:none}70%{opacity:1}100%{opacity:0;transform:translateY(3px)}}
 
-/* ---- middle ---- */
 .mid{flex:1;display:flex;align-items:center;justify-content:center;pointer-events:none}
-#nudge{font-family:var(--f-display);letter-spacing:.1em;text-transform:uppercase;font-size:13px;padding:6px 12px;border-radius:4px;background:var(--panel);border:1px solid var(--line);opacity:0;transition:opacity .25s}
+#nudge{font-family:var(--f-display);letter-spacing:.1em;text-transform:uppercase;font-size:12px;padding:5px 10px;border-radius:4px;background:var(--panel);border:1px solid var(--line);opacity:0;transition:opacity .25s;text-shadow:none}
 #nudge.on{opacity:1}
 #log{display:none}
 
-/* ---- bottom: every control ---- */
-.bottom{display:grid;justify-items:center}
-.console{pointer-events:auto;width:min(860px,100%);display:grid;gap:8px;padding:8px 10px}
-.orders{display:flex;align-items:stretch;gap:8px}
-.reactor{align-self:center;font-family:var(--f-data);font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
+/* ---- bottom: chatter bubbles, then every control ---- */
+.bottom{display:grid;justify-items:center;gap:6px}
+.chatter{width:min(860px,100%);height:150px;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;gap:5px;overflow:hidden;pointer-events:none;
+  -webkit-mask-image:linear-gradient(to top,#000 40%,transparent 100%);mask-image:linear-gradient(to top,#000 40%,transparent 100%)}
+.bub{--c:var(--ink);display:flex;gap:7px;align-items:flex-start;max-width:min(100%,460px);padding:5px 11px 6px 6px;border-radius:13px 13px 13px 4px;
+  background:rgba(8,12,20,.55);border:1px solid rgba(255,255,255,.08);font-size:12.5px;line-height:1.3;color:var(--ink);
+  animation:bub-in .3s ease-out both,bub-out 1.8s ease-in var(--life,5s) forwards}
+.bub .f{flex:none;width:18px;height:18px;border-radius:50%;border:1.5px solid var(--c);color:var(--c);font:700 10px/15px var(--f-display);text-align:center}
+.bub b{color:var(--c);font:700 11px/1.3 var(--f-display);letter-spacing:.1em;text-transform:uppercase;margin-right:5px}
+.bub.urgent{background:rgba(42,10,18,.6);border-color:rgba(255,84,104,.45)}
+@keyframes bub-in{from{opacity:0;max-height:0;transform:translateY(10px) scale(.96)}to{opacity:1;max-height:90px}}
+@keyframes bub-out{to{opacity:0;transform:translateY(-16px)}}
+
+.console{pointer-events:auto;width:min(860px,100%);display:grid;gap:6px;padding:7px 9px;background:var(--panel);border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.orders{display:flex;align-items:stretch;gap:7px}
+.reactor{align-self:center;font-family:var(--f-data);font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.35}
 .reactor b{color:var(--ink);font-weight:500}
 .reactor.flash b{color:var(--danger)}
-.order-list{flex:1;display:flex;gap:8px;min-width:0}
-.btn{pointer-events:auto;font:600 13px/1 var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--ink);background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:6px;padding:8px 12px;cursor:pointer;min-height:44px}
+.order-list{flex:1;display:flex;gap:7px;min-width:0}
+.btn{pointer-events:auto;font:600 12px/1 var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--ink);background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:6px;padding:8px 11px;cursor:pointer;min-height:40px}
 .btn:hover{background:rgba(255,255,255,.1)}
 .btn:focus-visible,.pw:focus-visible,.order:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-.order{position:relative;flex:1;min-width:0;min-height:44px;overflow:hidden;border-radius:6px;border:1px solid var(--line);color:var(--dim);cursor:pointer;
+.order{position:relative;flex:1;min-width:0;min-height:40px;overflow:hidden;border-radius:6px;border:1px solid var(--line);color:var(--dim);cursor:pointer;
   background:linear-gradient(90deg, rgba(180,140,255,.16) calc(var(--p,0) * 100%), rgba(255,255,255,.03) 0);
-  display:grid;align-content:center;justify-items:start;gap:2px;padding:6px 12px;text-align:left;touch-action:none}
+  display:grid;align-content:center;justify-items:start;gap:2px;padding:5px 11px;text-align:left;touch-action:none}
 .order::after{content:"";position:absolute;inset:0;background:rgba(180,140,255,.45);transform:scaleX(var(--h,0));transform-origin:left;pointer-events:none}
-.order .lab{position:relative;z-index:1;font:700 13px/1.1 var(--f-display);letter-spacing:.1em;text-transform:uppercase}
+.order .lab{position:relative;z-index:1;font:700 12px/1.1 var(--f-display);letter-spacing:.1em;text-transform:uppercase}
 .order .hint{position:relative;z-index:1;font:400 10px/1.2 var(--f-data);color:var(--dim)}
 .order.ready{border-color:var(--engine);color:var(--ink);box-shadow:0 0 14px rgba(180,140,255,.3)}
 .order.ready .lab{color:var(--engine)}
-.order:disabled{cursor:default}
-.ctl{font-size:12px}
 
-.systems{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-.sys{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:start;min-width:0}
+.systems{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.sys{display:grid;gap:3px;min-width:0}
 .sys[data-sys="shields"]{--c:var(--shield)}
 .sys[data-sys="weapons"]{--c:var(--weapon)}
 .sys[data-sys="engines"]{--c:var(--engine)}
-.sys .face{margin-top:2px}
-.sys-body{display:grid;gap:4px;min-width:0}
-.sys-head{display:flex;align-items:baseline;gap:8px}
-.sys-name{font-family:var(--f-display);font-weight:700;font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--c)}
-.crew-tag{font-family:var(--f-display);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
-.key{margin-left:auto;font-family:var(--f-data);font-size:10px;color:var(--dim)}
-.sys-row{display:grid;grid-template-columns:40px 1fr 40px;gap:6px;align-items:center}
-.pw{pointer-events:auto;height:40px;border-radius:6px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--c);font:600 20px/1 var(--f-data);cursor:pointer;touch-action:manipulation}
+.sys-head{display:flex;align-items:baseline;gap:7px;min-width:0}
+.sys-name{font-family:var(--f-display);font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--c)}
+.crew-tag{font-family:var(--f-display);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.stat{margin-left:auto;font:400 10px/1.2 var(--f-data);color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.stat b{color:var(--ink);font-weight:500}
+.stat .off{color:var(--danger)}
+.sys-row{display:grid;grid-template-columns:38px 1fr 38px;gap:5px;align-items:center}
+.pw{pointer-events:auto;height:36px;border-radius:6px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--c);font:600 19px/1 var(--f-data);cursor:pointer;touch-action:manipulation}
 .pw:hover{background:rgba(255,255,255,.1)}
 .pw:active{transform:translateY(1px)}
 .pips{display:flex;gap:3px;min-width:0}
-.pip{flex:1;height:22px;border:1px solid var(--line);border-radius:2px;position:relative;overflow:hidden;background:rgba(255,255,255,.025)}
+.pip{flex:1;height:18px;border:1px solid var(--line);border-radius:2px;position:relative;overflow:hidden;background:rgba(255,255,255,.025)}
 .pip::after{content:"";position:absolute;inset:0;background:var(--c);transform:scaleY(var(--f,0));transform-origin:bottom}
 .pip.tgt{border-color:var(--c)}
 .pip.over{background:repeating-linear-gradient(135deg,rgba(255,255,255,.08) 0 2px,transparent 2px 6px)}
 .pip.over::after{opacity:.35}
-.sys .say{font-size:11px}
 
 /* ---- overlays ---- */
 .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(3,5,9,.62);z-index:5;overflow:auto}
@@ -127,9 +128,9 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
 .card h1{margin:0;font-family:var(--f-display);font-weight:700;font-size:clamp(34px,7vw,52px);letter-spacing:.06em;line-height:1;text-transform:uppercase;text-wrap:balance}
 .card p{margin:0;line-height:1.55;max-width:62ch}
 .card .muted{color:var(--dim)}
+.face{width:34px;height:34px;flex:none;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--c);background:rgba(255,255,255,.04);font:700 14px/1 var(--f-display);color:var(--c)}
 .crew-intro{display:grid;gap:10px;margin:0;padding:0;list-style:none}
 .crew-intro li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;font-size:13px;line-height:1.4}
-.crew-intro .face{width:34px;height:34px;font-size:14px}
 .crew-intro b{font-family:var(--f-display);letter-spacing:.1em;text-transform:uppercase;color:var(--c)}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .stats div{display:grid;gap:2px}
@@ -139,69 +140,44 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
 .btn:disabled{opacity:.45;cursor:default}
 .keys{font-family:var(--f-data);font-size:11px;color:var(--dim)}
 
-/* ---- phone portrait: comms strip on top, ship bars beneath, stacked power rows at the bottom ---- */
+/* ---- phone portrait ---- */
 @media (max-width:640px){
-  .hud{padding:calc(8px + env(safe-area-inset-top,0px)) 10px calc(8px + env(safe-area-inset-bottom,0px));gap:6px}
-  .panel{background:rgba(8,12,20,.42);border-color:rgba(140,175,210,.12)}
-  .top{grid-template-columns:1fr 1fr;grid-template-areas:"comms comms" "mine foe";gap:6px}
-  .comms{width:100%;padding:6px 8px;gap:8px}
-  .comms .face{width:32px;height:32px;font-size:14px}
-  .comms .say{font-size:12px}
-  .ship{padding:5px 8px;gap:3px}
+  .hud{padding:calc(8px + env(safe-area-inset-top,0px)) 10px calc(8px + env(safe-area-inset-bottom,0px));gap:4px}
+  .ship{width:calc(50vw - 18px);gap:8px}
   .ship h2{font-size:11px}
-  .ship h2 small{display:none}
-  .bar{grid-template-columns:36px 1fr 28px;gap:5px;font-size:9.5px}
-  .bar .track{height:4px}
-  .console{padding:6px 8px;gap:6px}
-  .reactor{font-size:10px}
-  .order .lab{font-size:12px}
-  .systems{grid-template-columns:1fr;gap:6px}
-  .sys{gap:7px}
-  .sys .face{width:32px;height:32px;font-size:14px}
-  .sys-head{gap:6px}
-  .sys-name{font-size:12px}
-  .crew-tag{font-size:10px}
+  .bar{grid-template-columns:34px 1fr 26px;gap:4px;font-size:9.5px}
+  .chatter{height:120px;gap:4px}
+  .bub{font-size:11.5px;padding:4px 9px 5px 5px}
+  .console{padding:6px 7px;gap:5px;background:rgba(8,12,20,.42)}
+  .systems{grid-template-columns:1fr;gap:5px}
   .key{display:none}
-  .sys-row{grid-template-columns:38px 1fr 38px;gap:5px}
-  .pw{height:36px}
-  .pip{height:16px}
-  .sys .say{font-size:10.5px}
+  .sys-row{grid-template-columns:38px 1fr 38px}
+  .pw{height:34px}
+  .pip{height:15px}
   .card{padding:18px;gap:12px}
   .stats{grid-template-columns:repeat(2,1fr)}
   .keys{display:none}
 }
-/* short screens (landscape phones, small windows) */
 @media (max-height:520px) and (min-width:641px){
-  .hud{gap:4px;padding-top:6px;padding-bottom:6px}
-  .console{gap:4px;padding:5px 8px}
-  .pw{height:32px} .pip{height:14px} .btn,.order{min-height:36px}
-  .sys .face{width:30px;height:30px;font-size:13px}
-  .crew-intro li{font-size:12px}
+  .chatter{height:84px}
+  .pw{height:30px} .pip{height:13px} .btn,.order{min-height:34px}
 }
-@media (prefers-reduced-motion:reduce){.bar .fill,.face{transition:none}}
+@media (prefers-reduced-motion:reduce){.bar .fill{transition:none}.bub{animation-duration:.01s,.01s}}
 </style>
 
 </head>
 <body>
 <canvas id="game" aria-label="Battle view"></canvas>
-<canvas id="fx" aria-hidden="true"></canvas>
 
 <div class="hud">
   <header class="top">
-    <section class="panel comms" aria-label="Comms">
-      <div class="face" id="face-tally" aria-hidden="true">T</div>
-      <div>
-        <div class="who"><b>Tally</b> · Comms</div>
-        <div class="say" id="line-tally" aria-live="polite">Scanning…</div>
-      </div>
-    </section>
-    <section class="panel ship mine" aria-label="Your ship">
-      <h2>Kestrel <small>you</small></h2>
+    <section class="ship mine" aria-label="Your ship">
+      <h2 id="p-name">Kestrel</h2>
       <div class="bar hullbar" id="p-hull"><label>Hull</label><div class="track"><div class="fill"></div></div><output>110</output></div>
       <div class="bar shbar" id="p-sh"><label>Shield</label><div class="track"><div class="fill"></div></div><output>0</output></div>
     </section>
-    <section class="panel ship foe" aria-label="Enemy ship">
-      <h2>Corsair <small>hostile</small></h2>
+    <section class="ship foe" aria-label="Enemy ship">
+      <h2 id="e-name">Corsair</h2>
       <div class="bar hullbar" id="e-hull"><label>Hull</label><div class="track"><div class="fill"></div></div><output>140</output></div>
       <div class="bar shbar" id="e-sh"><label>Shield</label><div class="track"><div class="fill"></div></div><output>0</output></div>
       <div class="scan" aria-label="Scanned enemy power">
@@ -209,6 +185,7 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
         <i style="--c:var(--weapon)"><em id="eb-w"></em></i>
         <i style="--c:var(--engine)"><em id="eb-e"></em></i>
       </div>
+      <div class="intent" id="intent">Scanning</div>
     </section>
   </header>
 
@@ -216,7 +193,8 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
   <div id="log" aria-hidden="true"></div>
 
   <footer class="bottom">
-    <section class="panel console" aria-label="Captain's console">
+    <div class="chatter" id="chatter" aria-live="polite"></div>
+    <section class="console" aria-label="Captain's console">
       <div class="orders">
         <div class="reactor" id="reactor">Reactor <b>10</b><br>free <b id="free">0</b></div>
         <div class="order-list" id="orders"></div>
@@ -224,28 +202,16 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
       </div>
       <div class="systems">
         <div class="sys" data-sys="shields">
-          <div class="face" id="face-fergus" aria-hidden="true">F</div>
-          <div class="sys-body">
-            <div class="sys-head"><span class="sys-name">Shields</span><span class="crew-tag">Fergus</span><span class="key">Q + / A −</span></div>
-            <div class="sys-row"><button class="pw" id="shields-minus" data-k="shields" data-d="-1" aria-label="Less power to shields">−</button><div class="pips"></div><button class="pw" id="shields-plus" data-k="shields" data-d="1" aria-label="More power to shields">+</button></div>
-            <div class="say" id="line-fergus"></div>
-          </div>
+          <div class="sys-head"><span class="sys-name">Shields</span><span class="crew-tag">Fergus</span><span class="stat" id="stat-shields"></span></div>
+          <div class="sys-row"><button class="pw" id="shields-minus" data-k="shields" data-d="-1" aria-label="Less power to shields">−</button><div class="pips"></div><button class="pw" id="shields-plus" data-k="shields" data-d="1" aria-label="More power to shields">+</button></div>
         </div>
         <div class="sys" data-sys="weapons">
-          <div class="face" id="face-dot" aria-hidden="true">D</div>
-          <div class="sys-body">
-            <div class="sys-head"><span class="sys-name">Weapons</span><span class="crew-tag">Dot</span><span class="key">W + / S −</span></div>
-            <div class="sys-row"><button class="pw" id="weapons-minus" data-k="weapons" data-d="-1" aria-label="Less power to weapons">−</button><div class="pips"></div><button class="pw" id="weapons-plus" data-k="weapons" data-d="1" aria-label="More power to weapons">+</button></div>
-            <div class="say" id="line-dot"></div>
-          </div>
+          <div class="sys-head"><span class="sys-name">Weapons</span><span class="crew-tag">Dot</span><span class="stat" id="stat-weapons"></span></div>
+          <div class="sys-row"><button class="pw" id="weapons-minus" data-k="weapons" data-d="-1" aria-label="Less power to weapons">−</button><div class="pips"></div><button class="pw" id="weapons-plus" data-k="weapons" data-d="1" aria-label="More power to weapons">+</button></div>
         </div>
         <div class="sys" data-sys="engines">
-          <div class="face" id="face-juno" aria-hidden="true">J</div>
-          <div class="sys-body">
-            <div class="sys-head"><span class="sys-name">Engines</span><span class="crew-tag">Juno</span><span class="key">E + / D −</span></div>
-            <div class="sys-row"><button class="pw" id="engines-minus" data-k="engines" data-d="-1" aria-label="Less power to engines">−</button><div class="pips"></div><button class="pw" id="engines-plus" data-k="engines" data-d="1" aria-label="More power to engines">+</button></div>
-            <div class="say" id="line-juno"></div>
-          </div>
+          <div class="sys-head"><span class="sys-name">Engines</span><span class="crew-tag">Juno</span><span class="stat" id="stat-engines"></span></div>
+          <div class="sys-row"><button class="pw" id="engines-minus" data-k="engines" data-d="-1" aria-label="Less power to engines">−</button><div class="pips"></div><button class="pw" id="engines-plus" data-k="engines" data-d="1" aria-label="More power to engines">+</button></div>
         </div>
       </div>
     </section>
@@ -290,15 +256,12 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
 <script>
 (() => {
   const cv = document.getElementById('game');
-  const fx = document.getElementById('fx');
-  const fctx = fx.getContext('2d');
   let W = 0, H = 0, DPR = 1;
   let GL = null; // WebGL renderer state, once it is up
   const camState = { x: 0, y: 0, D: 2600, shake: 0 };
   function resize() {
     DPR = Math.min(1.75, window.devicePixelRatio || 1); // capped for phone GPUs
     W = window.innerWidth; H = window.innerHeight;
-    fx.width = Math.round(W * DPR); fx.height = Math.round(H * DPR);
     if (GL) {
       GL.renderer.setPixelRatio(DPR); GL.renderer.setSize(W, H, false);
       GL.camera.aspect = W / H;
@@ -352,6 +315,7 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
   };
 
   const RANGE = 700;
+  const SHIP_R = 28; // collision radius of a ship hull
   const eff = (s, k) => Math.min(s.actual[k], s.def.parts[k].cap) * s.def.parts[k].eff;
   const shieldMax = s => { const e = eff(s, 'shields'); return e < 0.4 ? 0 : 10 + 6 * e; };
   const regen = s => 0.8 + 0.3 * eff(s, 'shields');
@@ -371,6 +335,8 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
   // Unguided accuracy falls off with range and the target's evasion.
   const hitChance = (s, w, foe) => clamp(w.acc - (Math.hypot(foe.x - s.x, foe.y - s.y) / RANGE) * w.falloff - evasion(foe), 0.05, 0.98);
   const inArc = (s, w, i, foe) => Math.abs(angDiff(bearing(s, foe), weaponAim(s, w, i))) <= (w.arc / 2) * DEG;
+  // Line of fire: blocked if the straight line between the ships passes through an asteroid.
+  const clearShot = (s, foe) => rocks.every(r => segDist(r.x, r.y, s.x, s.y, foe.x, foe.y) > r.cr * 0.9);
 
   function makeShip(def, x, y) {
     const s = {
@@ -378,7 +344,7 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
       target: { ...def.alloc }, actual: { ...def.alloc },
       x, y, vx: 0, vy: 0, ang: 0, bank: 0,
       orbit: rand(0, Math.PI * 2), orbitDir: Math.random() < 0.5 ? 1 : -1, radius: rand(300, 460), retune: rand(6, 12),
-      mode: 'orbit', modeT: 0, speed: 60, slipX: 0, slipY: 0, jumping: 0,
+      mode: 'orbit', modeT: 0, speed: 60, slipX: 0, slipY: 0, jumping: 0, bumpT: 0, breakX: 0, breakY: 0,
       wt: def.weapons.map(() => rand(0, 0.4)), tr: def.weapons.map(() => 0),
       flash: 0, spool: 0, dead: false, trail: [], warp: 0
     };
@@ -388,6 +354,7 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
 
   // ---------- State ----------
   let P, E, shots, parts, pops, ai, stats, state = 'title', endTimer = 0, outcome = null, time = 0, contact = false, jumpReadyLogged = false;
+  let rocks = [];
   const cam = camState;
   const logLines = [];
   const logEl = document.getElementById('log');
@@ -399,12 +366,32 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     P.orbitDir = 1; E.orbitDir = -1;
     shots = []; parts = []; pops = [];
     ai = { phase: 'skirmish', t: rand(12, 16) };
-    stats = { dealt: 0, taken: 0, evaded: 0 };
+    stats = { dealt: 0, taken: 0, evaded: 0, bumps: 0 };
+    makeField();
+    if (GL) buildRockVis();
     endTimer = 0; outcome = null; time = 0; contact = false; jumpReadyLogged = false;
     cam.x = 0; cam.y = 0; cam.D = 2600;
     if (shots) shots.forEach(disposeShot);
     if (GL) ['P', 'E'].forEach(k => { const vs = GL.ships[k]; vs.spin = 0; vs.trails.forEach(tr => { tr.pts.length = 0; }); });
     logLines.length = 0; renderLog();
+  }
+
+  // ---------- Battlefield: asteroids ----------
+  // A new field each battle. r = visual radius, cr = collision radius. Starting spots and room to fly between rocks are kept clear.
+  function makeField() {
+    rocks = [];
+    const kinds = ['rock-1', 'rock-2', 'ice-2', 'ice-crystal'];
+    const add = (kind, r) => {
+      for (let t = 0; t < 80; t++) {
+        const x = rand(-1150, 1150), y = rand(-760, 760);
+        if (Math.hypot(x + 1300, y - 220) < r + 300 || Math.hypot(x - 1300, y + 220) < r + 300) continue;
+        if (rocks.some(o => Math.hypot(o.x - x, o.y - y) < o.r + r + 160)) continue;
+        rocks.push({ kind, x, y, r, cr: r * 0.8, rx: rand(0, 6.28), ry: rand(0, 6.28), rz: rand(0, 6.28), spin: rand(-0.15, 0.15) });
+        return;
+      }
+    };
+    add('rock-industrial', rand(115, 145));
+    for (let i = 0; i < 10; i++) add(kinds[Math.floor(Math.random() * kinds.length)], rand(48, 100));
   }
 
   // ---------- Log + nudges ----------
@@ -482,7 +469,7 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
       }
       if (online) {
         s.wt[i] = Math.min(w.interval, s.wt[i] + dt);
-        if (s.wt[i] >= w.interval && close && inArc(s, w, i, foe)) { s.wt[i] = 0; fire(s, foe, w, i); }
+        if (s.wt[i] >= w.interval && close && inArc(s, w, i, foe) && clearShot(s, foe)) { s.wt[i] = 0; fire(s, foe, w, i); }
       } else {
         s.wt[i] = Math.max(0, s.wt[i] - dt * (w.kind === 'torpedo' ? 0.4 : 0.15)); // unpowered weapons hold most of their charge
       }
@@ -493,6 +480,7 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     if (!weaponOnline(s, w)) return { text: `offline · needs ${w.min}`, off: true };
     if (s.wt[i] < w.interval) return { text: `charging ${Math.floor(s.wt[i] / w.interval * 100)}%` };
     if (!inRange()) return { text: 'out of range' };
+    if (!clearShot(s, foe)) return { text: 'blocked' };
     if (!inArc(s, w, i, foe)) return { text: w.mount === 'turret' ? 'tracking' : 'lining up' };
     return { text: 'firing' };
   }
@@ -540,7 +528,7 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
   const HIT_R = 26;
 
   function evaded(t, p) {
-    pops.push({ x: t.x, y: t.y - 30, text: 'EVADED', color: C.engine, t: 1 });
+    hudTick(t === P ? 'p' : 'e', 'evade', 'evaded');
     if (t === P) { stats.evaded++; if (p.w.kind === 'torpedo') { log('Torpedo evaded.'); crewEvent('torpEvaded'); } }
     if (p.src === P && p.w.kind === 'rail') crewEvent('railMiss');
   }
@@ -565,6 +553,8 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
         }
         p.x += p.vx * dt; p.y += p.vy * dt;
         p.trail.push(p.x, p.y); if (p.trail.length > 40) p.trail.splice(0, 2);
+        const hitRock = rocks.find(r => Math.hypot(p.x - r.x, p.y - r.y) < r.cr);
+        if (hitRock) { rockHit(p, hitRock); continue; }
         if (p.homing) {
           if (p.hit && d < 16) { if (alive) applyDamage(t, p.dmg, p.w.pierce, p); p.life = 0; }
           else if (!p.hit && d < 110) { p.homing = false; jink(t); evaded(t, p); }
@@ -573,6 +563,8 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
       }
       const ax = p.x, ay = p.y;
       p.x += p.vx * dt; p.y += p.vy * dt;
+      const hitRock = rocks.find(r => segDist(r.x, r.y, ax, ay, p.x, p.y) < r.cr);
+      if (hitRock) { rockHit(p, hitRock); continue; }
       if (!alive) continue;
       const d = segDist(t.x, t.y, ax, ay, p.x, p.y);
       if (d < HIT_R) { applyDamage(t, p.dmg, p.w.pierce, p); p.life = 0; continue; }
@@ -582,13 +574,23 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     shots = shots.filter(p => { if (p.life > 0) return true; disposeShot(p); return false; });
   }
 
+  // A shot strikes an asteroid: sparks and rock dust, and the shot is spent.
+  function rockHit(p, r) {
+    const big = p.w.kind !== 'bolt';
+    burst(p.x, p.y, big ? 26 : 8, big ? '#ffd7a0' : p.w.color, big ? 220 : 110);
+    burst(p.x, p.y, big ? 14 : 4, '#8d8a86', 90);
+    p.life = 0;
+    if (p.w.kind === 'torpedo') { cam.shake = Math.max(cam.shake, 5); if (p.tgt === P) crewEvent('torpRock'); }
+  }
+
   function applyDamage(t, dmg, pierce, p) {
-    let hullD = 0;
+    let hullD = 0, shD = 0;
     const shielded = t.shield > 0 && !t.down;
     if (shielded) {
       const r = resist(t);
       const sPart = dmg * (1 - pierce) * (1 - r);
       hullD = dmg * pierce;
+      shD = Math.min(sPart, t.shield);
       if (sPart >= t.shield) {
         hullD += (sPart - t.shield) / (1 - r);
         t.shield = 0; t.down = true; t.downT = 9;
@@ -602,9 +604,12 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     if (t === P) stats.taken += hullD; else stats.dealt += dmg;
     const col = shielded ? C.shield : (p.w.kind === 'torpedo' ? C.danger : '#ffcf9e');
     burst(p.x, p.y, shielded ? 6 : 12, col, shielded ? 120 : 200);
-    pops.push({ x: t.x + rand(-10, 10), y: t.y - 26, text: (hullD > 0.5 ? '-' + hullD.toFixed(0) : 'absorbed'), color: hullD > 0.5 ? C.hull : C.shield, t: 1 });
+    const who = t === P ? 'p' : 'e';
+    if (shD > 0.2) hudTick(who, 'sh', shD);
+    if (hullD > 0.2) hudTick(who, 'hull', hullD);
     if (p.w.kind === 'torpedo' && t === P) { cam.shake = Math.max(cam.shake, 9); crewEvent('torpHit'); }
     if (p.src === P && p.w.kind === 'rail') crewEvent('railHit');
+    if (p.w.kind === 'ram') cam.shake = Math.max(cam.shake, 6);
     if (t.hull <= 0 && !t.dead) kill(t);
   }
 
@@ -633,9 +638,25 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     }
   }
 
-  // ---------- Piloting: orbit, attack runs for fixed weapons, break away ----------
-  function wantsRun(s) {
-    return s.def.weapons.some((w, i) => w.mount === 'fixed' && weaponOnline(s, w) && s.wt[i] >= w.interval * 0.75);
+  // ---------- Piloting ----------
+  // Three modes:
+  //   orbit - circle the enemy at a chosen radius, now and then switching direction and radius.
+  //   run   - a fixed weapon (rail, torpedo) is nearly charged: slow down, swing the nose onto the enemy and hold it there until it fires.
+  //   break - after the shot (or if the run gets too close), fly clear for a few seconds before circling again.
+  // Steering then bends the chosen heading around asteroids and the other ship, and the turn rate (set by engine power) limits how fast the nose can swing.
+  function fixedWeapon(s) {
+    let f = null;
+    s.def.weapons.forEach((w, i) => { if (w.mount === 'fixed' && weaponOnline(s, w)) f = { w, i }; });
+    return f;
+  }
+  // Start the run early enough that the nose arrives on target about when the weapon finishes charging.
+  function shouldRun(s, other) {
+    const f = fixedWeapon(s);
+    if (!f || !contact || other.dead) return false;
+    const remaining = f.w.interval - s.wt[f.i];
+    const offNose = Math.abs(angDiff(bearing(s, other), s.ang));
+    const swing = offNose / (turnRate(s) * DEG * 0.8);
+    return remaining <= swing + 1.5 && Math.hypot(other.x - s.x, other.y - s.y) > 260;
   }
 
   function updateMove(s, other, dt) {
@@ -648,35 +669,75 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
       return;
     }
     if (s.dead) { s.vx *= 0.98; s.vy *= 0.98; s.x += s.vx * dt; s.y += s.vy * dt; s.ang += dt * 0.8; return; }
+    s.bumpT = Math.max(0, s.bumpT - dt);
 
     const d2o = Math.hypot(other.x - s.x, other.y - s.y);
+    const f = fixedWeapon(s);
     s.modeT -= dt;
-    if (s.mode === 'orbit' && contact && !other.dead && wantsRun(s)) { s.mode = 'run'; s.modeT = 10; }
-    if (s.mode === 'run' && (d2o < 230 || s.modeT <= 0 || !wantsRun(s) || other.dead)) {
-      s.mode = 'break'; s.modeT = rand(3, 5);
-      s.orbit = Math.atan2(s.y - other.y, s.x - other.x); s.radius = rand(380, 480);
-    }
-    if (s.mode === 'break' && s.modeT <= 0) s.mode = 'orbit';
-
-    let gx, gy;
+    if (s.mode === 'orbit' && shouldRun(s, other)) { s.mode = 'run'; s.modeT = 14; s.runShot = f ? s.wt[f.i] : 0; }
     if (s.mode === 'run') {
-      gx = other.x + other.vx * 0.6; gy = other.y + other.vy * 0.6;
+      const fired = !f || s.wt[f.i] < s.runShot - 0.5;          // charge dropped back: the shot went off
+      if (f) s.runShot = Math.max(s.runShot, s.wt[f.i]);
+      if (fired || d2o < 170 || s.modeT <= 0 || other.dead) {
+        s.mode = 'break'; s.modeT = rand(2.5, 3.5);
+        // extend away on the far side of the enemy, slightly off to one side
+        const away = bearing(other, s) + rand(-0.5, 0.5);
+        s.breakX = other.x + Math.cos(away) * 700; s.breakY = other.y + Math.sin(away) * 700;
+      }
+    }
+    if (s.mode === 'break' && s.modeT <= 0) {
+      s.mode = 'orbit'; s.orbit = Math.atan2(s.y - other.y, s.x - other.x); s.radius = rand(340, 460);
+    }
+
+    let gx, gy, speedK = 1;
+    if (s.mode === 'run') {
+      // aim at where the enemy will be when the shot arrives
+      const lead = f ? d2o / f.w.speed : 0.5;
+      gx = other.x + other.vx * lead; gy = other.y + other.vy * lead;
+      speedK = 0.7;                                               // slower = tighter turns while lining up
+    } else if (s.mode === 'break') {
+      gx = s.breakX; gy = s.breakY; speedK = 1.1;
     } else {
       s.retune -= dt;
-      if (s.retune <= 0) { s.retune = rand(6, 12); if (Math.random() < 0.45) s.orbitDir *= -1; s.radius = rand(300, 460); }
+      if (s.retune <= 0) { s.retune = rand(7, 12); if (Math.random() < 0.4) s.orbitDir *= -1; s.radius = rand(320, 460); }
       s.orbit += dt * (0.12 + e * 0.03) * s.orbitDir;
       gx = other.x + Math.cos(s.orbit) * s.radius;
       gy = other.y + Math.sin(s.orbit) * s.radius;
     }
     if (Math.hypot(s.x, s.y) > 1400) { gx -= s.x * 0.5; gy -= s.y * 0.5; }
-    // Heading turns at a hard rate limit set by engine power, so ships fly smooth arcs.
+
+    // Steer around asteroids: if a rock blocks the straight line to the goal, aim for its edge instead,
+    // and keep passing on the same side until clear (so the ship never dithers nose-first into it).
+    let dx = gx - s.x, dy = gy - s.y;
+    const dl = Math.hypot(dx, dy) || 1;
+    let head = Math.atan2(dy, dx), block = null, bestD = Infinity;
+    for (const r of rocks) {
+      const clear = r.cr + SHIP_R + 45, dr = Math.hypot(r.x - s.x, r.y - s.y);
+      if (dr > dl + clear || dr >= bestD) continue;
+      if (segDist(r.x, r.y, s.x, s.y, gx, gy) < clear) { block = r; bestD = dr; }
+    }
+    if (block) {
+      const clear = block.cr + SHIP_R + 45, toRock = Math.atan2(block.y - s.y, block.x - s.x);
+      if (s.avoidRock !== block) {
+        s.avoidRock = block;
+        const gs = angDiff(head, toRock);
+        s.avoidSide = Math.abs(gs) > 0.05 ? Math.sign(gs) : (angDiff(s.ang, toRock) >= 0 ? 1 : -1);
+      }
+      head = toRock + s.avoidSide * (bestD > clear ? Math.asin(clear / bestD) + 0.08 : Math.PI / 2 + 0.35);
+    } else s.avoidRock = null;
+    // Keep a little distance from the other ship (less during an attack run).
+    let ax = Math.cos(head), ay = Math.sin(head);
+    if (!other.dead) {
+      const rx = s.x - other.x, ry = s.y - other.y, d = Math.hypot(rx, ry) || 1, reach = s.mode === 'run' ? 140 : 230;
+      if (d < reach) { const k = Math.pow(1 - d / reach, 2) * 2.2; ax += (rx / d) * k; ay += (ry / d) * k; }
+    }
+
     const tr = turnRate(s) * DEG;
-    const desired = Math.atan2(gy - s.y, gx - s.x);
+    const desired = Math.atan2(ay, ax);
     const da = angDiff(desired, s.ang);
     const turn = clamp(da, -tr * dt, tr * dt);
     s.ang = angDiff(s.ang + turn, 0);
-    const baseSpeed = (s.mode === 'run' ? 1.15 : 1) * (55 + e * 16);
-    const targetSpeed = baseSpeed * (Math.abs(da) > 1.6 ? 0.7 : 1);
+    const targetSpeed = speedK * (55 + e * 16) * (Math.abs(da) > 1.6 ? 0.7 : 1);
     s.speed += (targetSpeed - s.speed) * Math.min(1, dt * 0.8);
     const slipDecay = Math.exp(-dt * 1.5);
     s.slipX *= slipDecay; s.slipY *= slipDecay;
@@ -687,6 +748,51 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     s.muzzle = Math.max(0, (s.muzzle || 0) - dt * 4);
     s.trail.push(s.x - Math.cos(s.ang) * 30, s.y - Math.sin(s.ang) * 30);
     if (s.trail.length > 56) s.trail.splice(0, 2);
+  }
+
+  // ---------- Collisions ----------
+  // Ships bounce off asteroids and each other. Bounces push through the sideways "slip" velocity, so the ship slides back
+  // with its nose unchanged, and the pilot then steers away. Damage scales with the closing speed; shields take part of it.
+  function ram(t, dmg, x, y) {
+    if (state !== 'run' || dmg <= 0 || t.dead || t.warp > 0) return;
+    applyDamage(t, dmg, 0.4, { x, y, w: { kind: 'ram' }, src: null });
+  }
+  function collisions() {
+    for (const s of [P, E]) {
+      if (s.dead || s.warp > 0) continue;
+      for (const r of rocks) {
+        const dx = s.x - r.x, dy = s.y - r.y, d = Math.hypot(dx, dy) || 1, min = r.cr + SHIP_R;
+        if (d >= min) continue;
+        const nx = dx / d, ny = dy / d;
+        s.x = r.x + nx * min; s.y = r.y + ny * min;
+        const vn = s.vx * nx + s.vy * ny;                        // negative when moving into the rock
+        if (vn < 0) { s.slipX -= nx * vn * 1.6; s.slipY -= ny * vn * 1.6; s.speed *= 0.45; }
+        if (vn < -10 && s.bumpT <= 0) {
+          s.bumpT = 0.6;
+          const cx = r.x + nx * r.cr, cy = r.y + ny * r.cr;
+          burst(cx, cy, 18, '#ffcf9e', 160); burst(cx, cy, 10, '#8d8a86', 80);
+          ram(s, (-vn - 10) * 0.12, cx, cy);
+          if (state === 'run') { if (s === P) { stats.bumps++; crewEvent('bumpRock'); } else crewEvent('enemyRock'); }
+        }
+      }
+    }
+    if (P.dead || E.dead || P.warp > 0 || E.warp > 0) return;
+    const dx = P.x - E.x, dy = P.y - E.y, d = Math.hypot(dx, dy) || 1, min = SHIP_R * 2;
+    if (d >= min) return;
+    const nx = dx / d, ny = dy / d, push = (min - d) / 2;
+    P.x += nx * push; P.y += ny * push; E.x -= nx * push; E.y -= ny * push;
+    const vrel = (P.vx - E.vx) * nx + (P.vy - E.vy) * ny;       // negative when closing
+    if (vrel < 0) {
+      P.slipX -= nx * vrel * 0.9; P.slipY -= ny * vrel * 0.9; E.slipX += nx * vrel * 0.9; E.slipY += ny * vrel * 0.9;
+      P.speed *= 0.5; E.speed *= 0.5;
+    }
+    if (vrel < -10 && P.bumpT <= 0) {
+      P.bumpT = E.bumpT = 0.8;
+      const cx = (P.x + E.x) / 2, cy = (P.y + E.y) / 2;
+      burst(cx, cy, 30, '#ffd7a0', 220);
+      ram(P, (-vrel - 10) * 0.1, cx, cy); ram(E, (-vrel - 10) * 0.1, cx, cy);
+      if (state === 'run') { stats.bumps++; crewEvent('bumpShip'); }
+    }
   }
 
   // ---------- Enemy AI ----------
@@ -748,7 +854,7 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
       hull: 'models/corsair.json', rotY: Math.PI / 2, scale: 66, glow: 0xffaa78, trail: [1, 0.55, 0.4], shieldR: 42,
       tint: 0x5c3b2c, outline: [[22, 5], [22, -5], [10, -9], [6, -18], [-14, -18], [-22, -8], [-22, 8], [-14, 18], [6, 18], [10, 9]],
       engines: [[-32.4, 11.4, -8.2], [-32.4, 11.4, 0], [-32.4, 11.4, 8.2], [-32.4, 5.3, -9.9], [-32.4, 5.3, 0], [-32.4, 5.3, 9.9]], // two rows of three nozzles
-      mounts: [{ weapon: 0, turret: true, model: null, at: [-13.9, 16.3, 0] }]
+      mounts: [{ weapon: 0, turret: true, model: 'models/autocannon.json', rotY: Math.PI / 2, scale: 14, at: [-13.9, 15.6, 0] }]
     }
   };
 
@@ -820,6 +926,8 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     GL = { renderer, scene, camera, flash, glowTex, wedgeTex, PCAP, pPos, pCol, pGeo, shieldGeo, shieldVS, shieldFS, mats: {}, colors: {} };
     GL.ships = { P: buildShipVis(VIS.player, true), E: buildShipVis(VIS.enemy, false) };
     GL.arcs = buildArcs();
+    buildRockVis();
+    buildBackdropRocks();
     GL.shotGeo = {
       bolt: new THREE.BoxGeometry(14, 1.1, 1.1).translate(-7, 0, 0),
       railCore: new THREE.BoxGeometry(50, 1.4, 1.4).translate(-25, 0, 0),
@@ -900,18 +1008,99 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     return { vis, root, tilt, hullSlot, mounts, engines, shield, trails, TN, sampleT: 0, pitch: 0, lastSpeed: 0, phase: rand(0, 6), spin: 0 };
   }
 
+  // ---- firing arcs ----
+  // Two thin laser edges along the arc's limits: solid near the ship, then breaking into dashes that fade with range,
+  // with a very faint glow filling the space between. Drawn in a shader on a flat sector.
+  const ARC_VS = 'varying vec2 vP; void main(){ vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+  const ARC_FS = [
+    'uniform vec3 color; uniform float opacity; uniform float halfA; uniform float len; uniform float crawl; uniform float px;',
+    'varying vec2 vP;',
+    'void main(){',
+    '  float r = length(vP);',
+    '  float d = clamp(r / len, 0.0, 1.0);',
+    '  float a = abs(atan(vP.y, vP.x));',
+    '  float edge = r * sin(max(halfA - a, 0.0));',                       // distance in from the arc limit, in world units
+    '  float core = 1.0 - smoothstep(0.0, 1.8 * px, edge);',
+    '  float halo = (1.0 - smoothstep(0.0, 9.0 * px, edge)) * 0.3;',
+    '  float gap = mix(1.0, 0.22, smoothstep(0.2, 0.95, d));',         // dashes get shorter with range
+    '  float dash = step(fract((r - crawl) / 30.0), gap);',
+    '  float line = (core + halo) * mix(1.0, dash, smoothstep(0.16, 0.3, d)) * pow(1.0 - d, 1.3);',
+    '  float fill = 0.05 * pow(1.0 - d, 1.6);',
+    '  float alpha = (line + fill) * opacity;',
+    '  gl_FragColor = vec4(color * alpha, alpha);',
+    '}'].join('\n');
   function buildArcs() {
-    const mk = (len, arcDeg) => {
-      const geo = new THREE.CircleGeometry(len, 28, -(arcDeg / 2) * DEG, arcDeg * DEG);
+    const mk = (arcDeg, color) => {
+      const geo = new THREE.CircleGeometry(RANGE, 40, -(arcDeg / 2) * DEG, arcDeg * DEG);
       geo.rotateX(-Math.PI / 2);
-      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: GL.wedgeTex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { color: { value: new THREE.Color(color) }, opacity: { value: 0 }, halfA: { value: (arcDeg / 2) * DEG }, len: { value: RANGE }, crawl: { value: 0 }, px: { value: 1 } },
+        vertexShader: ARC_VS, fragmentShader: ARC_FS, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
+      });
+      const mesh = new THREE.Mesh(geo, mat);
       mesh.position.y = 1.5; GL.scene.add(mesh); return mesh;
     };
     const pw = DEFS.player.weapons, ew = DEFS.enemy.weapons;
-    const laser = mk(RANGE * 0.6, pw[0].arc); laser.material.color.set(0xff9442);
-    const rail = mk(RANGE, pw[1].arc); rail.material.color.set(0xfff1c2);
-    const torp = mk(RANGE, ew[1].arc); torp.material.color.set(0xff5468);
-    return { P: [laser, rail], torp };
+    return { P: [mk(pw[0].arc, 0xff9a52), mk(pw[1].arc, 0xfff1c2)], torp: mk(ew[1].arc, 0xff5468) };
+  }
+
+  // ---- asteroids ----
+  const ROCK_FILES = {
+    'rock-1': 'models/rock-1.json', 'rock-2': 'models/rock-2.json', 'rock-industrial': 'models/rock-industrial.json',
+    'ice-2': 'models/ice-2.json', 'ice-crystal': 'models/ice-crystal.json'
+  };
+  const LOD_FILES = ['models/rock-1-lod.json', 'models/rock-2-lod.json', 'models/ice-2-lod.json', 'models/ice-crystal-lod.json'];
+  const rockTpl = {};            // loaded models, centred and scaled to radius 1
+  function rockPlaceholder() {
+    return new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshStandardMaterial({ color: 0x4a4b52, roughness: 0.95, metalness: 0, flatShading: true }));
+  }
+  function normaliseRock(obj) {
+    obj.traverse(o => { if (o.isMesh && o.material) { o.material.metalness = Math.min(o.material.metalness, 0.2); o.material.roughness = Math.max(o.material.roughness, 0.75); } });
+    const box = new THREE.Box3().setFromObject(obj), c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+    obj.position.sub(c);
+    const g = new THREE.Group(); g.add(obj);
+    g.scale.setScalar(2 / Math.max(sz.x, sz.y, sz.z));
+    return g;
+  }
+  function rockModel(key) { return rockTpl[key] ? rockTpl[key].clone() : rockPlaceholder(); }
+  // Arena rocks follow the simulation's field and are rebuilt each battle.
+  function buildRockVis() {
+    (GL.rockVis || []).forEach(v => GL.scene.remove(v.holder));
+    GL.rockVis = rocks.map(r => {
+      const holder = new THREE.Group(), spin = new THREE.Group(), slot = new THREE.Group();
+      holder.add(spin); spin.add(slot);
+      holder.position.set(r.x, 0, r.y);
+      if (r.kind === 'rock-industrial') { spin.rotation.set(-Math.PI / 2 + 0.35, r.ry, 0); }   // lay the ring face-up, tipped toward the camera
+      else spin.rotation.set(r.rx, r.ry, r.rz);
+      slot.scale.setScalar(r.r);
+      slot.add(rockModel(r.kind));
+      GL.scene.add(holder);
+      return { r, holder, spin, slot };
+    });
+  }
+  // Background rocks: low-detail, well below the battle plane, purely for depth.
+  function buildBackdropRocks() {
+    GL.backdrop = [];
+    for (let i = 0; i < 34; i++) {
+      const holder = new THREE.Group(), slot = new THREE.Group();
+      holder.add(slot);
+      const depth = rand(260, 2400);
+      holder.position.set(rand(-3600, 3600), -depth, rand(-2600, 2600));
+      holder.rotation.set(rand(0, 6.28), rand(0, 6.28), rand(0, 6.28));
+      slot.scale.setScalar(rand(30, 70) + depth * rand(0.03, 0.08));
+      const lod = i % LOD_FILES.length;
+      slot.add(rockModel('lod' + lod));
+      GL.scene.add(holder);
+      GL.backdrop.push({ holder, slot, lod, ax: new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize(), sp: rand(-0.08, 0.08) });
+    }
+  }
+  function refreshRockModels() {
+    (GL.rockVis || []).forEach(v => { if (rockTpl[v.r.kind] && !v.real) { v.slot.clear(); v.slot.add(rockModel(v.r.kind)); v.real = true; } });
+    (GL.backdrop || []).forEach(b => { if (rockTpl['lod' + b.lod] && !b.real) { b.slot.clear(); b.slot.add(rockModel('lod' + b.lod)); b.real = true; } });
+  }
+  function updateRockVis(dt) {
+    (GL.rockVis || []).forEach(v => { v.spin.rotation.y += v.r.spin * dt; });
+    (GL.backdrop || []).forEach(b => { b.holder.rotateOnAxis(b.ax, b.sp * dt); });
   }
 
   // ---- model loading ----
@@ -937,6 +1126,8 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
         jobs.push(get(mt.m.model).then(obj => { mt.slot.clear(); mt.slot.add(fitModel(obj.clone(), mt.m.rotY, mt.m.scale)); }));
       });
     });
+    Object.entries(ROCK_FILES).forEach(([k, url]) => jobs.push(loadModel(url).then(obj => { rockTpl[k] = normaliseRock(obj); refreshRockModels(); })));
+    LOD_FILES.forEach((url, i) => jobs.push(loadModel(url).then(obj => { rockTpl['lod' + i] = normaliseRock(obj); refreshRockModels(); })));
     return Promise.allSettled(jobs).then(r => r.filter(x => x.status === 'rejected').length);
   }
 
@@ -1008,24 +1199,29 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
 
   function updateArcVis(t) {
     const A = GL.arcs;
+    // world units per screen pixel, so the edge lines stay a constant on-screen width at any zoom
+    const px = (2 * camState.D * Math.tan(GL.camera.fov * DEG / 2)) / Math.max(1, H);
+    A.P.forEach(m => { m.material.uniforms.px.value = px; }); A.torp.material.uniforms.px.value = px;
     const showP = state !== 'title' && !P.dead && P.warp === 0;
     P.def.weapons.forEach((w, i) => {
-      const mesh = A.P[i];
-      const online = weaponOnline(P, w);
-      mesh.visible = showP && online;
+      const mesh = A.P[i], u = mesh.material.uniforms;
+      mesh.visible = showP && weaponOnline(P, w);
       if (!mesh.visible) return;
-      const ready = P.wt[i] >= w.interval, onT = ready && inArc(P, w, i, E) && inRange();
-      const o = w.mount === 'turret' ? muzzleBase(P, w) : { x: P.x, y: P.y };
+      const ready = P.wt[i] >= w.interval, onT = ready && inArc(P, w, i, E) && inRange() && clearShot(P, E);
+      const o = muzzleBase(P, w);
       mesh.position.set(o.x, 1.5, o.y);
       mesh.rotation.y = -weaponAim(P, w, i);
-      mesh.material.opacity = onT ? 0.5 : ready ? 0.26 : 0.1;
+      u.opacity.value = onT ? 1.25 : ready ? 0.85 : 0.3 + 0.35 * (P.wt[i] / w.interval);
+      u.crawl.value = ready ? t * 60 : 0;
     });
     const tw = E.def.weapons[1];
     const showT = state !== 'title' && !E.dead && ai.phase === 'torpedo' && weaponOnline(E, tw);
     A.torp.visible = showT;
     if (showT) {
+      const u = A.torp.material.uniforms, pct = E.wt[1] / tw.interval;
       A.torp.position.set(E.x, 1.5, E.y); A.torp.rotation.y = -E.ang;
-      A.torp.material.opacity = 0.14 + 0.22 * ((Math.sin(t * 6) + 1) / 2) * (E.wt[1] / tw.interval);
+      u.opacity.value = 0.35 + 0.7 * pct * (0.6 + 0.4 * Math.sin(t * 6));
+      u.crawl.value = t * 40 * pct;
     }
   }
 
@@ -1108,23 +1304,6 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     GL.flash.intensity = Math.max(0, GL.flash.intensity - dt * 9);
   }
 
-  function drawOverlay() {
-    fctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    fctx.clearRect(0, 0, W, H);
-    if (!GL) return;
-    fctx.textAlign = 'center';
-    fctx.font = '600 15px "Saira Condensed", "Arial Narrow", sans-serif';
-    const v = new THREE.Vector3();
-    for (const t of pops) {
-      v.set(t.x, 26, t.y).project(GL.camera);
-      if (v.z > 1) continue;
-      const sx = (v.x + 1) / 2 * W, sy = (1 - v.y) / 2 * H - (1 - t.t) * 26;
-      fctx.globalAlpha = Math.max(0, t.t); fctx.fillStyle = t.color;
-      fctx.fillText(t.text, sx, sy);
-    }
-    fctx.globalAlpha = 1;
-  }
-
   function renderFrame(dt, t) {
     if (!GL) return;
     updateCamera(dt);
@@ -1133,8 +1312,8 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     updateArcVis(t);
     updateShotVis();
     updateParticleVis();
+    updateRockVis(dt);
     GL.renderer.render(GL.scene, GL.camera);
-    drawOverlay();
   }
 
   // ---------- HUD ----------
@@ -1157,8 +1336,8 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
   });
 
   // ---------- Crew voices ----------
-  // Each crew member shows one line at a time. Urgent lines (higher prio) interrupt; every line has a cooldown so nobody nags.
-  // When nobody is talking, their slot shows a plain status readout for their station.
+  // Every line appears as a chat bubble above the console, rises and fades. Each line has a cooldown so nobody nags,
+  // and a crew member's lower-priority lines wait while they're mid-sentence. Station readouts sit beside each power row.
   const CREW = ['tally', 'fergus', 'dot', 'juno'];
   const voice = {}, saidAt = {}, later = [];
   let pollT = 0;
@@ -1175,7 +1354,8 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     if (saidAt[key] !== undefined && time - saidAt[key] < cd) return false;
     const v = voice[id];
     if (time < v.until && v.prio > prio) return false;
-    v.text = text; v.until = time + dur; v.prio = prio; saidAt[key] = time;
+    v.text = text; v.until = time + Math.min(dur, 3); v.prio = prio; saidAt[key] = time;
+    postBubble(id, text, prio, dur);
     return true;
   }
   const sayLater = (delay, id, text, o) => later.push({ at: time + delay, id, text, o });
@@ -1240,6 +1420,21 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
         say('fergus', "Abandon ship! Calmly! In an orderly fashion!", { prio: 5, dur: 9 });
         sayLater(0.6, 'tally', "Mayday, mayday!", { prio: 5, dur: 8 });
         break;
+      case 'bumpRock':
+        say('juno', pick(["Rock! Sorry. Rock.", "Who put that there?", "That rock came out of nowhere. Space nowhere."]), { prio: 3, key: 'jRock', cd: 6 });
+        sayLater(1, 'fergus', pick(["She's not a pinball, Juno!", "I just painted that bit."]), { prio: 2, key: 'fRock', cd: 12 });
+        break;
+      case 'enemyRock':
+        say('tally', pick(["Ha! They hit a rock!", "Corsair just headbutted an asteroid. Rock wins."]), { prio: 2, key: 'tRock', cd: 12 });
+        break;
+      case 'bumpShip':
+        say('tally', pick(["We just bumped into them. Rude.", "Contact! Like, actual contact!"]), { prio: 3, key: 'tBump', cd: 8 });
+        sayLater(0.9, 'juno', pick(["They started it.", "Personal space, please."]), { prio: 2, key: 'jBump', cd: 8 });
+        sayLater(1.8, 'fergus', "Was that a ship or a wall?", { prio: 2, key: 'fBump', cd: 20 });
+        break;
+      case 'torpRock':
+        say('tally', pick(["Torpedo hit a rock! The rock had it coming.", "Rock took the torpedo for us. Good rock."]), { prio: 3, key: 'tTorpRock', cd: 8 });
+        break;
       case 'jumpOrder':
         say('tally', "Juno! Get us out of here!", { prio: 5, dur: 4 });
         sayLater(0.8, 'juno', pick(["Way ahead of you.", "Say no more. Hold onto something."]), { prio: 5, dur: 4 });
@@ -1275,6 +1470,7 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     else if (!weaponOnline(P, rail) && T.weapons < rail.min && !torpThreat) say('dot', "Doris needs 4 power. She won't get out of bed for less.", { key: 'dotRail', cd: 35 });
     if (T.weapons === 0) say('dot', "Guns are cold. Just so you know.", { key: 'dotCold', cd: 30 });
     if (weaponOnline(P, laser) && hitChance(P, laser, E) < 0.35) say('dot', "Long shots only. One in three if I'm lucky.", { key: 'dotFar', cd: 40 });
+    if (inRange() && !clearShot(P, E) && P.wt[0] >= laser.interval) say('dot', pick(["Rock in the way! I can't see them.", "There's an asteroid in my shot."]), { key: 'dotBlocked', cd: 25 });
     if (T.weapons > P.def.parts.weapons.cap) say('dot', `Doris maxes out at ${P.def.parts.weapons.cap}. The rest is just noise.`, { key: 'wCap', cd: 25 });
 
     // Fergus: shields
@@ -1292,48 +1488,82 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     if (pollT <= 0) { pollT = 0.5; crewPoll(); }
   }
 
-  // Status readouts when a crew member isn't talking.
-  function idleText(id) {
-    if (id === 'tally') {
-      if (state === 'title') return 'Scanning…';
-      if (E.dead) return 'Nothing left of them but salvage.';
-      if (!contact) return `Corsair closing · ${distance().toFixed(0)} out, range ${RANGE}`;
-      if (ai.phase === 'torpedo') {
-        const t = E.def.weapons[1], pct = E.wt[1] / t.interval;
-        return !weaponOnline(E, t) ? 'Corsair powering a torpedo' : pct < 1 ? `Torpedo charging ${Math.floor(pct * 100)}%` : 'Torpedo armed, lining up';
-      }
-      if (E.down) return 'Corsair shields down';
-      if (ai.phase === 'recover') return 'Corsair raising shields';
-      return 'Corsair autocannon fire';
+  // ---- chatter bubbles ----
+  const CREW_INFO = {
+    tally: { name: 'Tally', c: 'var(--comms)' }, fergus: { name: 'Fergus', c: 'var(--shield)' },
+    dot: { name: 'Dot', c: 'var(--weapon)' }, juno: { name: 'Juno', c: 'var(--engine)' }
+  };
+  const chatterEl = document.getElementById('chatter');
+  function postBubble(id, text, prio, dur) {
+    const info = CREW_INFO[id], b = document.createElement('div');
+    b.className = 'bub' + (prio >= 4 ? ' urgent' : '');
+    b.style.setProperty('--c', info.c);
+    b.style.setProperty('--life', Math.max(3.2, dur) + 's');
+    b.innerHTML = `<span class="f" aria-hidden="true">${info.name[0]}</span><span><b>${info.name}</b></span>`;
+    b.lastChild.appendChild(document.createTextNode(text));
+    chatterEl.appendChild(b);
+    while (chatterEl.children.length > 7) chatterEl.firstChild.remove();
+    setTimeout(() => b.remove(), (Math.max(3.2, dur) + 2) * 1000);
+  }
+  function clearChatter() { chatterEl.innerHTML = ''; }
+
+  // ---- damage ticks under the ship stats ----
+  const tickState = {};
+  function hudTick(who, stat, val) {
+    const host = stat === 'evade' ? document.getElementById(who + '-name') : document.getElementById(who + '-' + stat);
+    const k = who + stat, now = performance.now(), last = tickState[k];
+    if (typeof val === 'number' && last && now - last.t < 450 && last.el.isConnected) {
+      last.v += val; last.t = now; last.el.textContent = '−' + Math.round(last.v);
+      return;
     }
-    if (id === 'fergus') {
-      if (eff(P, 'shields') < 0.4) return '<span class="off">Shields offline</span>';
-      if (P.down) return `<span class="off">Shields down</span> · back in <b>${(P.downT / (0.6 + 0.15 * eff(P, 'shields'))).toFixed(1)}s</b>`;
-      return `Shield <b>${P.shield.toFixed(0)}/${shieldMax(P).toFixed(0)}</b> · regen <b>${regen(P).toFixed(1)}</b>/s · resist <b>${(resist(P) * 100).toFixed(0)}%</b>`;
+    const el = document.createElement('span');
+    el.className = 'tick';
+    el.textContent = typeof val === 'number' ? '−' + Math.max(1, Math.round(val)) : val;
+    host.appendChild(el);
+    tickState[k] = { el, t: now, v: typeof val === 'number' ? val : 0 };
+    setTimeout(() => el.remove(), 1500);
+  }
+
+  // ---- station readouts beside each power row, and the enemy's intent under its stats ----
+  function intentText() {
+    if (state === 'title') return ['Scanning', ''];
+    if (E.dead) return ['Destroyed', 'open'];
+    if (!contact) return [`Closing · ${Math.max(0, distance() - RANGE).toFixed(0)} to range`, ''];
+    if (ai.phase === 'torpedo') {
+      const t = E.def.weapons[1], pct = E.wt[1] / t.interval;
+      return [!weaponOnline(E, t) ? 'Powering torpedo' : pct < 1 ? `Torpedo ${Math.floor(pct * 100)}%` : 'Torpedo armed', 'threat'];
     }
-    if (id === 'dot') {
+    if (E.down) return ['Shields down', 'open'];
+    if (!clearShot(E, P)) return ['Behind a rock', ''];
+    if (ai.phase === 'recover') return ['Raising shields', ''];
+    return ['Autocannon fire', ''];
+  }
+  function statText(k) {
+    if (k === 'shields') {
+      if (eff(P, 'shields') < 0.4) return '<span class="off">offline</span>';
+      if (P.down) return `<span class="off">down</span> · back in <b>${(P.downT / (0.6 + 0.15 * eff(P, 'shields'))).toFixed(1)}s</b>`;
+      return `<b>${P.shield.toFixed(0)}/${shieldMax(P).toFixed(0)}</b> · +${regen(P).toFixed(1)}/s`;
+    }
+    if (k === 'weapons') {
       const [laser, rail] = P.def.weapons, ls = weaponStatus(P, laser, 0, E), rs = weaponStatus(P, rail, 1, E);
-      const l = weaponOnline(P, laser) ? `Laser <b>${(hitChance(P, laser, E) * 100).toFixed(0)}%</b> ${ls.text}` : '<span class="off">Laser off</span>';
-      const r = weaponOnline(P, rail) ? `Doris <b>${(hitChance(P, rail, E) * 100).toFixed(0)}%</b> ${rs.text}` : `<span class="off">Doris needs ${rail.min}</span>`;
+      // the pips and arcs already show charge, so only say something when it matters
+      const brief = st => st.text.startsWith('charging') ? '' : ' ' + st.text;
+      const l = weaponOnline(P, laser) ? `laser <b>${(hitChance(P, laser, E) * 100).toFixed(0)}%</b>${brief(ls)}` : '<span class="off">laser off</span>';
+      const r = weaponOnline(P, rail) ? `Doris${brief(rs) || ' ' + Math.floor(P.wt[1] / rail.interval * 100) + '%'}` : `<span class="off">Doris needs ${rail.min}</span>`;
       return l + ' · ' + r;
     }
-    return `Evade <b>${(evasion(P) * 100).toFixed(0)}%</b> · turn <b>${turnRate(P).toFixed(0)}°/s</b> · jump <b>${Math.floor(P.spool)}%</b>`;
+    return `evade <b>${(evasion(P) * 100).toFixed(0)}%</b> · jump <b>${Math.floor(P.spool)}%</b>`;
   }
-  const lineEls = {}, faceEls = {}, lastHTML = {};
-  CREW.forEach(id => { lineEls[id] = document.getElementById('line-' + id); faceEls[id] = document.getElementById('face-' + id); });
+  const statEls = {}, lastHTML = {};
+  SYS.forEach(k => { statEls[k] = document.getElementById('stat-' + k); });
+  const intentEl = document.getElementById('intent');
   function renderCrew() {
-    CREW.forEach(id => {
-      const v = voice[id], talking = state !== 'title' && time < v.until;
-      const html = talking ? v.text.replace(/&/g, '&amp;').replace(/</g, '&lt;') : idleText(id);
-      const key = (talking ? 'T' : 'I') + html;
-      if (lastHTML[id] !== key) {
-        lastHTML[id] = key;
-        lineEls[id].innerHTML = html;
-        lineEls[id].classList.toggle('talk', talking);
-        lineEls[id].classList.toggle('alert', talking && v.prio >= 4);
-        faceEls[id].classList.toggle('talk', talking);
-      }
+    SYS.forEach(k => {
+      const html = statText(k);
+      if (lastHTML[k] !== html) { lastHTML[k] = html; statEls[k].innerHTML = html; }
     });
+    const [txt, cls] = intentText(), key = txt + cls;
+    if (lastHTML.intent !== key) { lastHTML.intent = key; intentEl.textContent = txt; intentEl.className = 'intent ' + cls; }
   }
 
   // ---------- Orders (given through comms) ----------
@@ -1397,7 +1627,7 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
   const titleEl = document.getElementById('title'), endEl = document.getElementById('end');
   const pauseBtn = document.getElementById('pause');
   function start() {
-    reset(); crewReset();
+    reset(); crewReset(); clearChatter();
     titleEl.hidden = true; endEl.hidden = true; state = 'run'; pauseBtn.textContent = 'Pause';
     log('Corsair gunship detected. Closing to weapons range.');
     crewEvent('start');
@@ -1435,7 +1665,7 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
 
 
   // ---------- Boot + main loop ----------
-  window.__duel = () => ({ P, E, stats, ai, shots, GL, camState });
+  window.__duel = () => ({ P, E, stats, ai, shots, GL, camState, rocks });
   GL = initGL(); resize();
   const startBtn = document.getElementById('start'), loadNote = document.getElementById('load-note');
   if (GL) {
@@ -1464,7 +1694,7 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
       crewUpdate(dt);
       if (outcome) { endTimer -= dt; if (endTimer <= 0) showEnd(); }
     }
-    if (live) { updateMove(P, E, dt); updateMove(E, P, dt); }
+    if (live) { updateMove(P, E, dt); updateMove(E, P, dt); collisions(); }
     if (nudgeT > 0) { nudgeT -= dt; if (nudgeT <= 0) nudgeEl.classList.remove('on'); }
     updateFx(state === 'paused' ? 0 : dt);
     renderFrame(state === 'paused' ? 0.0001 : dt, clock);
