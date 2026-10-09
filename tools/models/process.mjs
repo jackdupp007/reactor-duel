@@ -9,7 +9,7 @@ import { MeshoptSimplifier } from 'meshoptimizer';
 import sharp from 'sharp';
 import path from 'node:path';
 
-const [, , SRC, OUT] = process.argv;
+const [, , SRC, OUT, ONLY] = process.argv;          // optional ONLY: process just this output name
 
 // ratio = fraction of triangles to keep; tex = max texture size.
 const MODELS = [
@@ -28,6 +28,8 @@ const MODELS = [
   { src: 'rock-2', out: 'rock-2-lod', tex: 256, ratio: 0.1 },
   { src: 'ice-2', out: 'ice-2-lod', tex: 256, ratio: 0.12 },
   { src: 'ice-crystal', out: 'ice-crystal-lod', tex: 256, ratio: 0.12 },
+  // Fortune Station: four landing pads on the outside.
+  { src: 'station', tex: 2048, ratio: 0.8 },
 ];
 
 // Remove triangles whose three corners all sit below `y` (the industrial asteroid's base disc).
@@ -52,6 +54,7 @@ const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 await MeshoptSimplifier.ready;
 
 for (const m of MODELS) {
+  if (ONLY && (m.out || m.src) !== ONLY) continue;
   const doc = await io.read(path.join(SRC, m.src + '.glb'));
   // Tripo marks an unused volume extension; drop it.
   for (const ext of doc.getRoot().listExtensionsUsed()) ext.dispose();

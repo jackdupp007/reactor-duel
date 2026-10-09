@@ -102,7 +102,7 @@ const SCENES = {
     },
     pose(pos, look) {
       const fx = PAD.x + clamp(P.x - PAD.x, 0, 1e9) * 0.55, d = portrait() ? 420 : 250;
-      pos.set(fx - 30, 24 + P.h * 0.5, PAD.y + d); look.set(fx + 10, P.h * 0.8 + 6, P.y);
+      pos.set(fx - 30, 58 + P.h * 0.5, PAD.y + d); look.set(fx + 10, P.h * 0.8 + 4, P.y);
     }
   },
 
@@ -401,6 +401,7 @@ puppet('kestrel', PAD.x, PAD.y);
 if (GL) {
   preloadModels(p => { $('load-bar').style.width = Math.round(p * 100) + '%'; }).then(failed => {
     if (failed) $('load-note').textContent = 'Some models could not be loaded, so stand-in shapes are shown.';
+    attachStationModel();
     go('menu');
   });
 } else {

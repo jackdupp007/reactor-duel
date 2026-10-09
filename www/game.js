@@ -1123,6 +1123,7 @@ function preloadModels(onProgress) {
   const urls = new Set();
   Object.values(VIS).forEach(v => { urls.add(v.hull); v.mounts.forEach(m => m.model && urls.add(m.model)); });
   Object.values(ROCK_FILES).forEach(u => urls.add(u));
+  urls.add(STATION.url);
   Object.values(LOD_FILES).forEach(l => l.forEach(u => urls.add(u)));
   let done = 0, failed = 0;
   const all = [...urls];
@@ -1382,48 +1383,50 @@ function updateRockVis(dt) {
   (GL.backdrop || []).forEach(b => { b.holder.rotateOnAxis(b.ax, b.sp * dt); });
 }
 
-// ---- Fortune Station: a landing pad with lights, and the station wall behind it ----
+// ---- Fortune Station ----
+// The station model has four landing pads; the ship uses the low front-right one, so it lifts off away from the hull.
+// The model is placed so that pad's deck sits at PAD, height 0. A simple pad stands in if the model didn't load.
 const PAD = { x: 0, y: 0 };
+const STATION = { url: 'models/station.json', scale: 600, pad: [0.300, 0.165, 0.313] };
 function buildStation() {
   const g = new THREE.Group();
+  const fallback = new THREE.Group(); g.add(fallback);
   const metal = new THREE.MeshStandardMaterial({ color: 0x1b212b, metalness: 0.5, roughness: 0.7 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x10141b, metalness: 0.3, roughness: 0.85 });
-  const pad = new THREE.Mesh(new THREE.CylinderGeometry(78, 84, 8, 48), metal); pad.position.y = -4; g.add(pad);
-  const deck = new THREE.Mesh(new THREE.CylinderGeometry(70, 70, 0.6, 48), dark); deck.position.y = 0.3; g.add(deck);
+  const pad = new THREE.Mesh(new THREE.CylinderGeometry(78, 84, 8, 48), metal); pad.position.y = -4; fallback.add(pad);
+  const deck = new THREE.Mesh(new THREE.CylinderGeometry(70, 70, 0.6, 48), dark); deck.position.y = 0.3; fallback.add(deck);
   const ring = new THREE.Mesh(new THREE.TorusGeometry(58, 0.9, 6, 64), new THREE.MeshBasicMaterial({ color: 0x52c8ff }));
-  ring.rotation.x = Math.PI / 2; ring.position.y = 0.7; g.add(ring);
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(46, 10, 22), metal); arm.position.set(-100, -6, 0); g.add(arm);
-  // landing lights around the pad
+  ring.rotation.x = Math.PI / 2; ring.position.y = 0.7; fallback.add(ring);
+  // landing lights around the pad edge
   const lights = [];
   for (let i = 0; i < 16; i++) {
     const a = i / 16 * Math.PI * 2;
     const m = new THREE.Mesh(new THREE.SphereGeometry(1.4, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffb070 }));
-    m.position.set(Math.cos(a) * 76, 1, Math.sin(a) * 76); g.add(m); lights.push({ m, a });
+    m.position.set(Math.cos(a) * 70, 1.5, Math.sin(a) * 70); g.add(m); lights.push({ m, a });
   }
-  // station wall: a long dark hull far behind the pad, with rows of lit windows and a few girders
-  const hullMat = new THREE.MeshBasicMaterial({ color: 0x080b11 });   // unlit: reads as a dark silhouette
-  const wall = new THREE.Mesh(new THREE.BoxGeometry(2200, 520, 60), hullMat); wall.position.set(-300, 60, -700); g.add(wall);
-  const ledge = new THREE.Mesh(new THREE.BoxGeometry(2200, 18, 90), hullMat); ledge.position.set(-300, -150, -655); g.add(ledge);
-  for (let i = 0; i < 7; i++) { const gd = new THREE.Mesh(new THREE.BoxGeometry(14, 520, 40), hullMat); gd.position.set(-1250 + i * 300, 60, -660); g.add(gd); }
-  const winGeo = new THREE.BoxGeometry(9, 4, 2);
-  const winMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
-  const wins = new THREE.InstancedMesh(winGeo, winMat, 320), m4 = new THREE.Matrix4();
-  for (let i = 0; i < 320; i++) {
-    const row = Math.floor(rand(0, 9)), x = rand(-1350, 750);
-    m4.makeTranslation(x, -120 + row * 40 + rand(-3, 3), -668); wins.setMatrixAt(i, m4);
-  }
-  g.add(wins);
-  const beacon = new THREE.Sprite(new THREE.SpriteMaterial({ map: GL.glowTex, color: 0xff5468, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
-  beacon.position.set(-100, 18, 0); beacon.scale.set(18, 18, 1); g.add(beacon);
   const lamp = new THREE.PointLight(0xffd0a0, 1.2, 420, 2); lamp.position.set(30, 120, 80); g.add(lamp);
+  const beacon = new THREE.Sprite(new THREE.SpriteMaterial({ map: GL.glowTex, color: 0xff5468, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+  beacon.position.set(0, 26, -84); beacon.scale.set(18, 18, 1); g.add(beacon);
   g.position.set(PAD.x, 0, PAD.y);
   g.visible = false;
   GL.scene.add(g);
-  return { g, lights, beacon };
+  return { g, lights, beacon, fallback, model: null };
+}
+// Once models are loaded: put the real station in, with the chosen pad's deck on the origin.
+function attachStationModel() {
+  const st = GL.station, src = tpl[STATION.url];
+  if (!src || st.model) return;
+  const obj = src.clone(), S = STATION.scale, [px, py, pz] = STATION.pad;
+  obj.traverse(o => { if (o.isMesh && o.material) { o.material.metalness = 0.35; o.material.roughness = Math.max(o.material.roughness, 0.6); } });
+  obj.scale.setScalar(S); obj.position.set(-px * S, -py * S, -pz * S);
+  st.g.add(obj); st.model = obj; st.fallback.visible = false;
+  st.lights.forEach(l => { l.m.visible = false; }); st.beacon.visible = false;   // the model has its own pad markings
+  // a soft fill so the dark hull reads against space
+  const fill = new THREE.PointLight(0x9fc4ff, 1.4, 1600, 1.5); fill.position.set(-200, 360, 300); st.g.add(fill);
 }
 function updateStation(t) {
   const st = GL.station; if (!st.g.visible) return;
-  st.lights.forEach(l => { const on = (Math.sin(t * 3 - l.a * 2) + 1) / 2; l.m.material.color.setRGB(1, 0.45 + 0.35 * on, 0.2 + 0.3 * on); l.m.scale.setScalar(0.7 + on * 0.6); });
+  if (!st.model) st.lights.forEach(l => { const on = (Math.sin(t * 3 - l.a * 2) + 1) / 2; l.m.material.color.setRGB(1, 0.45 + 0.35 * on, 0.2 + 0.3 * on); l.m.scale.setScalar(0.7 + on * 0.6); });
   st.beacon.material.opacity = (Math.sin(t * 4) > 0.3) ? 1 : 0.15;
 }
 
@@ -2149,7 +2152,7 @@ const SCENES = {
     },
     pose(pos, look) {
       const fx = PAD.x + clamp(P.x - PAD.x, 0, 1e9) * 0.55, d = portrait() ? 420 : 250;
-      pos.set(fx - 30, 24 + P.h * 0.5, PAD.y + d); look.set(fx + 10, P.h * 0.8 + 6, P.y);
+      pos.set(fx - 30, 58 + P.h * 0.5, PAD.y + d); look.set(fx + 10, P.h * 0.8 + 4, P.y);
     }
   },
 
@@ -2448,6 +2451,7 @@ puppet('kestrel', PAD.x, PAD.y);
 if (GL) {
   preloadModels(p => { $('load-bar').style.width = Math.round(p * 100) + '%'; }).then(failed => {
     if (failed) $('load-note').textContent = 'Some models could not be loaded, so stand-in shapes are shown.';
+    attachStationModel();
     go('menu');
   });
 } else {
