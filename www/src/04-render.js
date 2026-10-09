@@ -6,7 +6,7 @@ const VIS = {
     tint: 0x3a4d63, outline: [[26, 0], [-6, 13], [-16, 15], [-10, 5], [-18, 4], [-18, -4], [-10, -5], [-16, -15], [-6, -13]],
     engines: [[-31, 8.9, -5.1], [-31, 8.9, 5.1]],
     mounts: [
-      { weapon: 0, turret: true, model: 'models/laser-turret.json', rotY: Math.PI / 2, scale: 12, at: [-18.3, 12.6, 0] },
+      { weapon: 0, turret: true, model: 'models/laser-turret.json', rotY: Math.PI / 2, scale: 8, centre: [0, -0.053], at: [-17.1, 12.4, 0] },
       { weapon: 1, turret: false, model: 'models/railgun.json', rotY: Math.PI, scale: 15, at: [13.5, 10.4, 0] }
     ]
   },
@@ -14,7 +14,7 @@ const VIS = {
     hull: 'models/corsair.json', rotY: Math.PI / 2, scale: 66, glow: 0xffaa78, trail: [1, 0.55, 0.4], shieldR: 42,
     tint: 0x5c3b2c, outline: [[22, 5], [22, -5], [10, -9], [6, -18], [-14, -18], [-22, -8], [-22, 8], [-14, 18], [6, 18], [10, 9]],
     engines: [[-32.4, 11.4, -8.2], [-32.4, 11.4, 0], [-32.4, 11.4, 8.2], [-32.4, 5.3, -9.9], [-32.4, 5.3, 0], [-32.4, 5.3, 9.9]],
-    mounts: [{ weapon: 0, turret: true, model: 'models/autocannon.json', rotY: Math.PI / 2, scale: 14, at: [-13.9, 15.6, 0] }]
+    mounts: [{ weapon: 0, turret: true, model: 'models/autocannon.json', rotY: Math.PI / 2, scale: 9.4, centre: [0.025, -0.116], at: [-11.9, 16, 0] }]
   }
 };
 const ROCK_FILES = {
@@ -77,22 +77,15 @@ function initGL() {
   });
 
   const glowTex = radialTex([[0, 'rgba(255,255,255,1)'], [0.22, 'rgba(255,255,255,0.65)'], [1, 'rgba(255,255,255,0)']]);
-  const dotTex = radialTex([[0, 'rgba(255,255,255,1)'], [0.5, 'rgba(255,255,255,0.5)'], [1, 'rgba(255,255,255,0)']], 64);
 
-  // Particles share one Points buffer.
-  const PCAP = 1200;
-  const pPos = new Float32Array(PCAP * 3), pCol = new Float32Array(PCAP * 3);
-  const pGeo = new THREE.BufferGeometry();
-  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
-  pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
-  const points = new THREE.Points(pGeo, new THREE.PointsMaterial({ size: 4, map: dotTex, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-  points.frustumCulled = false; scene.add(points);
+  // Particles: one glowing (additive) system for sparks and fire, one ordinary system for smoke and debris.
+  const psAdd = makeParticles(scene, 2000, true), psDark = makeParticles(scene, 1400, false);
 
   const shieldGeo = new THREE.SphereGeometry(1, 40, 20);
   const shieldVS = 'varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }';
   const shieldFS = 'uniform vec3 color; uniform float opacity; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(vN, vV)), 2.4); gl_FragColor = vec4(color * (f * 1.5 + 0.05), opacity); }';
 
-  GL = { renderer, scene, camera, flash, nebs, glowTex, PCAP, pPos, pCol, pGeo, shieldGeo, shieldVS, shieldFS, mats: {}, colors: {} };
+  GL = { renderer, scene, camera, flash, nebs, glowTex, psAdd, psDark, shieldGeo, shieldVS, shieldFS, mats: {}, colors: {} };
   GL.fieldGroup = new THREE.Group(); scene.add(GL.fieldGroup);
   GL.station = buildStation();
   GL.tunnel = buildTunnel();
@@ -104,6 +97,30 @@ function initGL() {
     torp: new THREE.SphereGeometry(2.6, 16, 10)
   };
   return GL;
+}
+
+// Round soft points with their own size (world units) and alpha. "hard" sharpens the edge (debris).
+const PS_VS = [
+  'attribute float size; attribute vec4 rgba; attribute float hard; uniform float scale;',
+  'varying vec4 vC; varying float vH;',
+  'void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vC = rgba; vH = hard;',
+  '  gl_PointSize = max(1.5, size * scale / -mv.z); gl_Position = projectionMatrix * mv; }'].join('\n');
+const PS_FS = [
+  'varying vec4 vC; varying float vH;',
+  'void main(){ float d = length(gl_PointCoord - 0.5) * 2.0; if (d > 1.0) discard;',
+  '  float a = mix(pow(1.0 - d, 1.6), 1.0 - smoothstep(0.6, 1.0, d), vH);',
+  '  gl_FragColor = vec4(vC.rgb, vC.a * a); }'].join('\n');
+function makeParticles(scene, cap, additive) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(cap * 3), rgba = new Float32Array(cap * 4), size = new Float32Array(cap), hard = new Float32Array(cap);
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('rgba', new THREE.BufferAttribute(rgba, 4));
+  geo.setAttribute('size', new THREE.BufferAttribute(size, 1));
+  geo.setAttribute('hard', new THREE.BufferAttribute(hard, 1));
+  const mat = new THREE.ShaderMaterial({ uniforms: { scale: { value: 1 } }, vertexShader: PS_VS, fragmentShader: PS_FS,
+    transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending });
+  const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; pts.renderOrder = additive ? 3 : 2; scene.add(pts);
+  return { geo, pos, rgba, size, hard, cap, mat, n: 0 };
 }
 
 const colorOf = c => GL.colors[c] || (GL.colors[c] = new THREE.Color(c));
@@ -130,11 +147,13 @@ function preloadModels(onProgress) {
   }).catch(() => { failed++; }).then(() => { done++; onProgress && onProgress(done / all.length); }))).then(() => failed);
 }
 // Wrap a template clone with its orientation and scale.
-function fitModel(url, rotY, scale, tint) {
+// centre: the model-space (x, z) point that should sit on the group's origin (a turret's base, so it spins on its ring).
+function fitModel(url, rotY, scale, tint, centre) {
   const src = tpl[url]; if (!src) return null;
   const obj = src.clone();
   if (tint) obj.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiply(new THREE.Color(tint)); } });
   obj.rotation.y = rotY; obj.scale.setScalar(scale);
+  if (centre) obj.position.copy(new THREE.Vector3(centre[0], 0, centre[1]).applyEuler(obj.rotation).multiplyScalar(-scale));
   const g = new THREE.Group(); g.add(obj); return g;
 }
 
@@ -157,9 +176,16 @@ function buildShipVis(s, isPlayer) {
   const root = new THREE.Group(), tilt = new THREE.Group(), hullSlot = new THREE.Group();
   root.add(tilt); tilt.add(hullSlot);
   hullSlot.add(fitModel(vis.hull, vis.rotY, vis.scale, tint) || placeholderHull(vis));
+  // Own copies of the hull materials, so damage can scorch this ship only.
+  const hullMats = [];
+  hullSlot.traverse(o => { if (o.isMesh && o.material) { o.material = o.material.clone(); hullMats.push({ m: o.material, base: o.material.color.clone() }); } });
+  const fires = [0, 1, 2].map(() => {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: GL.glowTex, color: 0xff7a2a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+    sp.position.set(rand(-22, 8), rand(10, 15), rand(-9, 9)); sp.visible = false; tilt.add(sp); return sp;
+  });
   const mounts = vis.mounts.map(m => {
     const pivot = new THREE.Group(); pivot.position.set(m.at[0], m.at[1], m.at[2]); tilt.add(pivot);
-    pivot.add((m.model && fitModel(m.model, m.rotY, m.scale, tint)) || placeholderPart());
+    pivot.add((m.model && fitModel(m.model, m.rotY, m.scale, tint, m.centre)) || placeholderPart());
     return { m, pivot };
   });
   const engines = vis.engines.map(p => {
@@ -183,7 +209,7 @@ function buildShipVis(s, isPlayer) {
     return { line, geo, pos, col, pts: [] };
   });
   GL.scene.add(root);
-  return { s, vis, root, tilt, mounts, engines, shield, trails, TN, sampleT: 0, pitch: 0, lastSpeed: 0, phase: rand(0, 6), spin: 0 };
+  return { s, vis, root, tilt, mounts, engines, shield, trails, TN, sampleT: 0, pitch: 0, lastSpeed: 0, phase: rand(0, 6), spin: 0, hullMats, fires, scorch: -1 };
 }
 function disposeShipVis(vs) {
   if (!vs) return;
@@ -213,6 +239,12 @@ function updateShipVis(vs, dt, t) {
   let roll = (s.bank / 0.7) * 22 * DEG + clamp(lat / 140, -0.3, 0.3) + Math.sin(t * 0.7 + vs.phase) * 2 * DEG;
   roll = clamp(roll, -25 * DEG, 25 * DEG);
   let pitch = vs.pitch + (s.pitchV || 0) + Math.sin(t * 0.55 + vs.phase * 2) * 1.2 * DEG;
+  if (s.jolt) {                                              // a heavy hit rocks the hull, then it settles
+    const j = s.jolt; j.t += dt;
+    const k = Math.exp(-j.t * 3) * Math.cos(j.t * 13);
+    roll += j.r * k; pitch += j.p * k;
+    if (j.t > 2) s.jolt = null;
+  }
   if (s.dead) {
     vs.spin += dt * 1.8; roll = vs.spin; pitch = vs.spin * 0.4;
     s.deathT = (s.deathT || 0) + dt;
@@ -225,6 +257,17 @@ function updateShipVis(vs, dt, t) {
     }
   }
   vs.tilt.rotation.set(roll, 0, pitch);
+  // Damage: the hull darkens and scorches, and fires flicker on it when it's in a bad way.
+  const dmg = s.dmgFx || 0;
+  if (Math.abs(dmg - vs.scorch) > 0.01) {
+    vs.scorch = dmg;
+    const burnt = new THREE.Color(0x2b1d16), k = clamp((dmg - 0.1) * 0.9, 0, 0.72);
+    vs.hullMats.forEach(h => { h.m.color.copy(h.base).lerp(burnt, k); });
+  }
+  vs.fires.forEach((f, i) => {
+    f.visible = !s.dead && dmg > 0.55 + i * 0.13;
+    if (f.visible) { const k = 13 + Math.random() * 8 + Math.sin(t * 17 + i * 3) * 3; f.scale.set(k, k, 1); f.material.opacity = 0.55 + Math.random() * 0.35; }
+  });
   vs.mounts.forEach(mt => { if (mt.m.turret) mt.pivot.rotation.y = -s.tr[mt.m.weapon]; });
   const e = eff(s, 'engines') + (s.boost || 0);
   vs.engines.forEach(sp => {
@@ -240,10 +283,17 @@ function updateShipVis(vs, dt, t) {
   vs.root.updateMatrixWorld(true);
   vs.sampleT += dt;
   const sample = vs.sampleT >= 1 / 30; if (sample) vs.sampleT = 0;
+  const moving = !s.dead && Math.hypot(s.vx || 0, s.vy || 0) > 25;   // no trail while sitting still (on the pad, lifting off)
   const [r, g, b] = vs.vis.trail, wp = new THREE.Vector3();
+  if (s.trailReset) { s.trailReset = false; vs.trails.forEach(tr => { tr.pts.length = 0; }); }
   vs.trails.forEach((tr, k) => {
-    if (sample && !s.dead) { vs.engines[k].getWorldPosition(wp); tr.pts.push(wp.x, wp.y, wp.z); if (tr.pts.length > vs.TN * 3) tr.pts.splice(0, 3); }
-    else if (sample && s.dead && tr.pts.length) tr.pts.splice(0, 3);
+    if (sample && moving) {
+      vs.engines[k].getWorldPosition(wp);
+      const L = tr.pts.length;
+      if (L && Math.hypot(wp.x - tr.pts[L - 3], wp.z - tr.pts[L - 1]) > 120) tr.pts.length = 0;   // the ship was moved (new scene): start afresh
+      tr.pts.push(wp.x, wp.y, wp.z); if (tr.pts.length > vs.TN * 3) tr.pts.splice(0, 3);
+    }
+    else if (sample && tr.pts.length) tr.pts.splice(0, 3);
     const n = tr.pts.length / 3;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * (0.18 + e * 0.09);
@@ -404,8 +454,9 @@ function buildTunnel() {
       'float h(float n){ return fract(sin(n) * 43758.5453); }',
       'void main(){',
       '  float lane = floor(vUv.x * 64.0);',
-      '  float s = fract(vUv.y * (6.0 + h(lane) * 10.0) + time * (1.2 + h(lane + 7.0) * 1.8) + h(lane + 3.0));',
-      '  float streak = smoothstep(0.0, 0.02, s) * (1.0 - smoothstep(0.02, 0.35, s));',
+      // uv.y runs from the nose (0) to the tail (1); subtracting time makes the streaks rush back past the ship
+      '  float s = fract(vUv.y * (6.0 + h(lane) * 10.0) - time * (1.2 + h(lane + 7.0) * 1.8) + h(lane + 3.0));',
+      '  float streak = smoothstep(0.65, 0.98, s) * (1.0 - smoothstep(0.98, 1.0, s));',      // bright head leads, tail trails toward the nose
       '  vec3 col = mix(vec3(0.45, 0.35, 1.0), vec3(0.3, 0.85, 1.0), h(lane + 11.0));',
       '  float ends = smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.7, vUv.y);',
       '  float a = (streak * 0.9 + 0.06) * ends * opacity;',
@@ -468,15 +519,35 @@ function updateShotVis() {
     }
   }
 }
+const PCOL = {};
+const pcol = c => PCOL[c] || (PCOL[c] = new THREE.Color(c));
+let FIRE_A, FIRE_B, FIRE_C, tmpC;
 function updateParticleVis() {
-  const n = Math.min(parts.length, GL.PCAP), start = parts.length - n;
-  for (let i = 0; i < n; i++) {
-    const q = parts[start + i], c = colorOf(q.color), a = Math.max(0, q.life / q.max);
-    GL.pPos[i * 3] = q.x; GL.pPos[i * 3 + 1] = SHOT_Y + (q.h || 0); GL.pPos[i * 3 + 2] = q.y;
-    GL.pCol[i * 3] = c.r * a; GL.pCol[i * 3 + 1] = c.g * a; GL.pCol[i * 3 + 2] = c.b * a;
+  if (!tmpC) { FIRE_A = pcol('#fff0b8'); FIRE_B = pcol('#ff6a1e'); FIRE_C = pcol('#5a1a0a'); tmpC = new THREE.Color(); }
+  const A = GL.psAdd, D = GL.psDark;
+  A.n = 0; D.n = 0;
+  const scale = (H * DPR) / (2 * Math.tan(GL.camera.fov * DEG / 2));
+  A.mat.uniforms.scale.value = D.mat.uniforms.scale.value = scale;
+  for (let i = parts.length - 1; i >= 0; i--) {            // newest first, so the cap drops the oldest
+    const q = parts[i], f = Math.max(0, q.life / q.max), age = q.max - q.life;
+    const k = q.k || 'glow', dark = k === 'smoke' || k === 'debris', S = dark ? D : A;
+    if (S.n >= S.cap) continue;
+    let c = pcol(q.color), a = f, hard = 0;
+    if (k === 'spark') a = Math.pow(f, 0.6) * 1.4;
+    else if (k === 'ember') a = f * (0.55 + 0.45 * Math.sin(age * 22 + i));
+    else if (k === 'fire') { const u = 1 - f; c = u < 0.4 ? tmpC.copy(FIRE_A).lerp(FIRE_B, u / 0.4) : tmpC.copy(FIRE_B).lerp(FIRE_C, (u - 0.4) / 0.6); a = Math.min(1, f * 1.6) * 0.9; }
+    else if (k === 'smoke') a = Math.min(1, age / 0.18) * Math.pow(f, 0.8) * 0.7;
+    else if (k === 'debris') { a = Math.min(1, f * 3); hard = 1; }
+    const j = S.n++;
+    S.pos[j * 3] = q.x; S.pos[j * 3 + 1] = SHOT_Y + (q.h || 0); S.pos[j * 3 + 2] = q.y;
+    S.rgba[j * 4] = c.r; S.rgba[j * 4 + 1] = c.g; S.rgba[j * 4 + 2] = c.b; S.rgba[j * 4 + 3] = a;
+    S.size[j] = q.size || 4; S.hard[j] = hard;
   }
-  GL.pGeo.attributes.position.needsUpdate = true; GL.pGeo.attributes.color.needsUpdate = true;
-  GL.pGeo.setDrawRange(0, n);
+  [A, D].forEach(S => {
+    const at = S.geo.attributes;
+    at.position.needsUpdate = at.rgba.needsUpdate = at.size.needsUpdate = at.hard.needsUpdate = true;
+    S.geo.setDrawRange(0, S.n);
+  });
 }
 
 // ---------- Camera ----------

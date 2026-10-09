@@ -55,6 +55,8 @@ function makeShip(key, x, y, crewSel, withBrain) {
     orbit: rand(0, Math.PI * 2), orbitDir: Math.random() < 0.5 ? 1 : -1, radius: rand(320, 460), retune: rand(6, 12),
     mode: 'orbit', modeT: 0, speed: 60, slipX: 0, slipY: 0, jumping: 0, bumpT: 0, breakX: 0, breakY: 0, runShot: 0,
     wt: weapons.map(() => rand(0, 0.4)), tr: weapons.map(() => 0),
+    lock: weapons.map(() => 0), burst: weapons.map(() => 0), burstT: weapons.map(() => 0),
+    yawV: 0, jolt: null, dmgFx: 0,
     flash: 0, spool: 0, dead: false, trail: [], warp: 0, hidden: false, manual: false,
     brain: withBrain ? { phase: 'skirmish', t: rand(def.ai.skirmish[0] - 4, def.ai.skirmish[1] - 6) } : null
   };
@@ -147,9 +149,11 @@ function updateShields(s, dt) {
 }
 
 // ---------- Weapons: charge, track, fire when in arc with a clear line ----------
+// Bursts (autocannon) fire their rounds a short gap apart. Torpedoes, once charged, build a lock while the target
+// stays in their arc, and launch by themselves when the lock completes.
 function updateWeapons(s, foe, dt) {
   if (s.dead || s.warp > 0) return;
-  const close = inRange() && !foe.dead && foe.warp === 0;
+  const close = inRange() && !foe.dead && foe.warp === 0 && !foe.hidden;
   s.weapons.forEach((w, i) => {
     const online = weaponOnline(s, w);
     if (w.mount === 'turret' && online) {
@@ -158,36 +162,61 @@ function updateWeapons(s, foe, dt) {
       s.tr[i] += clamp(angDiff(want, s.tr[i]), -step, step);
       s.tr[i] = angDiff(s.tr[i], 0);
     }
-    if (online) {
-      s.wt[i] = Math.min(w.interval, s.wt[i] + dt);
-      if (s.wt[i] >= w.interval && close && inArc(s, w, i, foe) && clearShot(s, foe)) { s.wt[i] = 0; fire(s, foe, w, i); }
-    } else {
+    if (!online) {
       s.wt[i] = Math.max(0, s.wt[i] - dt * (w.kind === 'torpedo' ? 0.4 : 0.15)); // unpowered weapons hold most of their charge
+      s.lock[i] = Math.max(0, s.lock[i] - dt / 2); s.burst[i] = 0;
+      return;
+    }
+    const ready = () => close && inArc(s, w, i, foe) && clearShot(s, foe);
+    if (s.burst[i] > 0) {                                     // rest of a burst
+      s.burstT[i] -= dt;
+      if (s.burstT[i] <= 0) {
+        if (ready()) { fire(s, foe, w, i); s.burst[i]--; s.burstT[i] = w.gap; }
+        else s.burst[i] = 0;
+      }
+      return;
+    }
+    s.wt[i] = Math.min(w.interval, s.wt[i] + dt);
+    if (s.wt[i] < w.interval) return;
+    if (w.kind === 'torpedo') {
+      const was = s.lock[i];
+      s.lock[i] = ready() ? Math.min(1, s.lock[i] + dt / w.lockT) : Math.max(0, s.lock[i] - dt / (w.lockT * 0.75));
+      if (was === 0 && s.lock[i] > 0 && s === E) crewEvent('enemyLock');
+      if (s.lock[i] >= 1) { s.lock[i] = 0; s.wt[i] = 0; fire(s, foe, w, i); }
+      return;
+    }
+    if (ready()) {
+      s.wt[i] = 0;
+      if (w.burst) { s.burst[i] = w.burst - 1; s.burstT[i] = w.gap; }
+      fire(s, foe, w, i);
     }
   });
 }
 
 function weaponStatus(s, w, i, foe) {
   if (!weaponOnline(s, w)) return { text: `needs ${w.min}`, off: true };
+  if (s.burst[i] > 0) return { text: 'firing' };
   if (s.wt[i] < w.interval) return { text: `charging ${Math.floor(s.wt[i] / w.interval * 100)}%` };
   if (!inRange()) return { text: 'out of range' };
   if (!clearShot(s, foe)) return { text: 'blocked' };
   if (!inArc(s, w, i, foe)) return { text: w.mount === 'turret' ? 'tracking' : 'lining up' };
+  if (w.kind === 'torpedo') return { text: `locking ${Math.floor(s.lock[i] * 100)}%` };
   return { text: 'firing' };
 }
 
 function fire(s, foe, w, i) {
   const dmg = weaponDmg(s, w);
   const a0 = weaponAim(s, w, i);
-  const mb = muzzleBase(s, w), reach = w.mount === 'turret' ? 9 : 30;
+  const mb = muzzleBase(s, w), reach = w.mount === 'turret' ? 7 : 30;
   const ox = mb.x + Math.cos(a0) * reach, oy = mb.y + Math.sin(a0) * reach;
-  burst(ox, oy, 5, w.color, 70);
+  burst(ox, oy, w.burst ? 3 : 5, w.color, 70);
   let p;
   if (w.kind === 'torpedo') {
-    // Guided: target lock, so only the target's engines can shake it.
-    const hit = Math.random() >= evasion(foe) * w.evadeMult;
-    p = { x: ox, y: oy, src: s, tgt: foe, w, dmg, hit, life: 24, age: 0, homing: true, missOff: (Math.random() < 0.5 ? -1 : 1) * rand(55, 95), trail: [] };
-    p.vx = Math.cos(a0) * w.speed; p.vy = Math.sin(a0) * w.speed;
+    // Guided, but physical: it hits only if it actually reaches the target before its fuel runs out.
+    p = { x: ox, y: oy, src: s, tgt: foe, w, dmg, life: w.fuel, age: 0, homing: true, trail: [] };
+    p.vx = Math.cos(a0) * w.boostSpeed; p.vy = Math.sin(a0) * w.boostSpeed;
+    burst(ox, oy, 14, '#ffd0a0', 120);
+    stats.torps = (stats.torps || 0) + 1;
   } else {
     // Unguided: aim at where the target will be; a miss is aimed deliberately to one side. Flight is a straight line.
     const hit = Math.random() < hitChance(s, w, foe);
@@ -201,7 +230,7 @@ function fire(s, foe, w, i) {
   shots.push(p);
   s.muzzle = 1;
   SFX.shot(w.kind, s === P, ox, oy);
-  if (w.kind === 'rail') camShake(3);
+  if (w.kind === 'rail') { camShake(4); if (s === P) buzz('light'); }
   if (w.mount === 'fixed') {
     if (s === E) crewEvent('inBigLaunch');
     if (s.brain) { s.brain.phase = 'recover'; s.brain.t = s.def.ai.recoverT; s.target = { ...s.def.ai.recover }; }
@@ -209,6 +238,7 @@ function fire(s, foe, w, i) {
 }
 
 function evaded(t, p) {
+  if (p.w.burst) { if (time - (t.evTick || -9) < 1) return; t.evTick = time; }   // one "evaded" per burst is plenty
   hudTick(t === P ? 'p' : 'e', 'evade', 'evaded');
   if (t === P) { stats.evaded++; if (p.w.mount === 'fixed') crewEvent('inBigEvaded'); }
   if (p.src === P && p.w.mount === 'fixed') crewEvent('bigMiss');
@@ -220,26 +250,21 @@ function updateShots(dt) {
     const t = p.tgt;
     const alive = !t.dead && t.warp === 0;
     if (p.w.kind === 'torpedo') {
-      let tx = t.x, ty = t.y;
-      if (!p.hit) {
-        const pa = Math.atan2(t.y - p.y, t.x - p.x) + Math.PI / 2;
-        tx += Math.cos(pa) * p.missOff; ty += Math.sin(pa) * p.missOff;
+      // Boost straight out, then ease down to cruise speed and chase with a limited turn rate.
+      const cur = Math.atan2(p.vy, p.vx), w = p.w;
+      let na = cur, sp = w.boostSpeed;
+      if (p.age > w.boost) {
+        sp = w.speed + (w.boostSpeed - w.speed) * Math.exp(-(p.age - w.boost) * 3);
+        if (alive) na = cur + clamp(angDiff(Math.atan2(t.y - p.y, t.x - p.x), cur), -w.turn * dt, w.turn * dt);
       }
-      const dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy) || 1;
-      if (p.homing) {
-        const cur = Math.atan2(p.vy, p.vx), want = Math.atan2(dy, dx);
-        const turn = (p.age > 4 ? 4 : 1.2) * dt;
-        const na = cur + clamp(angDiff(want, cur), -turn, turn);
-        p.vx = Math.cos(na) * p.w.speed; p.vy = Math.sin(na) * p.w.speed;
-      }
+      p.vx = Math.cos(na) * sp; p.vy = Math.sin(na) * sp;
       p.x += p.vx * dt; p.y += p.vy * dt;
       p.trail.push(p.x, p.y); if (p.trail.length > 40) p.trail.splice(0, 2);
+      if (Math.random() < dt * 14) smoke(p.x - p.vx * 0.03, p.y - p.vy * 0.03, 1, 0.5);
       const hitRock = rocks.find(r => Math.hypot(p.x - r.x, p.y - r.y) < r.cr);
       if (hitRock) { rockHit(p, hitRock); continue; }
-      if (p.homing) {
-        if (p.hit && d < 16) { if (alive) applyDamage(t, p.dmg, p.w.pierce, p); p.life = 0; }
-        else if (!p.hit && d < 110) { p.homing = false; jink(t); evaded(t, p); }
-      }
+      if (alive && Math.hypot(t.x - p.x, t.y - p.y) < SHIP_R) { stats.torpHit = (stats.torpHit || 0) + 1; applyDamage(t, p.dmg, w.pierce, p); p.life = 0; continue; }
+      if (p.life <= 0) torpFizzle(p, alive);
       continue;
     }
     const ax = p.x, ay = p.y;
@@ -255,11 +280,21 @@ function updateShots(dt) {
   shots = shots.filter(p => { if (p.life > 0) return true; disposeShot(p); return false; });
 }
 
+// Out of fuel: the torpedo blows itself up, harmlessly.
+function torpFizzle(p, alive) {
+  stats.torpFizz = (stats.torpFizz || 0) + 1;
+  impact(p.x, p.y, 1, null);
+  SFX.boom(true, p.x, p.y);
+  if (alive) evaded(p.tgt, p);
+}
+
 // A shot strikes an asteroid: sparks and rock dust, and the shot is spent.
 function rockHit(p, r) {
   const big = p.w.kind !== 'bolt';
-  burst(p.x, p.y, big ? 26 : 8, big ? '#ffd7a0' : p.w.color, big ? 220 : 110);
-  burst(p.x, p.y, big ? 14 : 4, fieldKind === 'ice' ? '#bfe6ff' : '#8d8a86', 90);
+  const rockCol = fieldKind === 'ice' ? '#bfe6ff' : '#8d8a86';
+  if (p.w.kind === 'torpedo') impact(p.x, p.y, 1.2, rockCol);
+  else if (big) impact(p.x, p.y, 0.6, rockCol);
+  else { burst(p.x, p.y, 8, p.w.color, 110); burst(p.x, p.y, 4, rockCol, 90); }
   p.life = 0;
   SFX.rock(big, p.x, p.y);
   if (p.w.kind === 'torpedo') { camShake(5); if (p.tgt === P) crewEvent('torpRock'); }
@@ -283,22 +318,40 @@ function applyDamage(t, dmg, pierce, p) {
   t.hull = Math.max(0, t.hull - hullD);
   t.sinceHit = 0;
   if (t === P) stats.taken += hullD; else stats.dealt += dmg;
-  const col = shielded ? C.shield : (p.w.kind === 'torpedo' ? C.danger : '#ffcf9e');
-  burst(p.x, p.y, shielded ? 6 : 12, col, shielded ? 120 : 200);
+  const big = p.w.mount === 'fixed';
+  if (shielded && hullD < 0.5) burst(p.x, p.y, big ? 30 : 6, C.shield, big ? 240 : 120);
+  else if (big) impact(p.x, p.y, p.w.kind === 'torpedo' ? 2.2 : 1.6, null, p.vx, p.vy);
+  else if (p.w.kind === 'ram') impact(p.x, p.y, 0.5, null);
+  else { burst(p.x, p.y, 10, '#ffcf9e', 200); sparks(p.x, p.y, 10, 1); smoke(p.x, p.y, 2, 0.7); }
+  if (shielded && hullD >= 0.5) burst(p.x, p.y, 10, C.shield, 160);
+  if (big) knock(t, p, shielded && hullD < 0.5 ? 0.45 : 1);
   const who = t === P ? 'p' : 'e';
   if (shD > 0.2) hudTick(who, 'sh', shD);
   if (hullD > 0.2) hudTick(who, 'hull', hullD);
   SFX.hit(shielded && hullD < 0.5, t === P, p.x, p.y);
-  if (p.w.kind === 'torpedo' && t === P) { camShake(9); crewEvent('inBigHit'); }
-  if (p.w.kind === 'rail' && t === P) crewEvent('inBigHit');
+  if (big && t === P) { camShake(p.w.kind === 'torpedo' ? 12 : 9); crewEvent('inBigHit'); buzz('heavy'); }
+  else if (big) camShake(4);
+  if (p.w.kind === 'ram' && t === P) buzz('medium');
   if (p.src === P && p.w.mount === 'fixed') crewEvent('bigHit');
   if (p.w.kind === 'ram') camShake(6);
   if (t.hull <= 0 && !t.dead) kill(t);
 }
 
+// A heavy hit shoves the ship along the shot's path and spins it, harder the further off-centre the hit lands.
+function knock(t, p, k) {
+  const v = Math.hypot(p.vx, p.vy) || 1, dx = p.vx / v, dy = p.vy / v;
+  const kick = (p.w.kind === 'torpedo' ? 1.2 : 0.9) * k;
+  t.slipX += dx * 110 * kick; t.slipY += dy * 110 * kick;
+  const rx = p.x - t.x, ry = p.y - t.y, off = clamp((rx * dy - ry * dx) / 22, -1, 1);   // which side of centre it struck
+  const spin = (Math.abs(off) < 0.15 ? (Math.random() < 0.5 ? -0.3 : 0.3) : off) * 1.9 * kick;
+  t.yawV += spin;
+  t.jolt = { r: clamp(-off, -1, 1) * 0.45 * kick, p: 0.18 * kick, t: 0 };
+}
+
 function kill(s) {
   s.dead = true;
-  for (let i = 0; i < 4; i++) setTimeout(() => burst(s.x + rand(-12, 12), s.y + rand(-12, 12), 30, i % 2 ? C.weapon : '#fff3d6', 320), i * 140);
+  for (let i = 0; i < 4; i++) setTimeout(() => impact(s.x + rand(-14, 14), s.y + rand(-14, 14), 1, null), i * 160);
+  if (s === P) buzz('death');
   camShake(14);
   SFX.boom(false, s.x, s.y);
   crewEvent(s === P ? 'lose' : 'win');
@@ -314,11 +367,68 @@ function jink(s) {
   s.slipX += Math.cos(a) * imp; s.slipY += Math.sin(a) * imp;
 }
 
+// ---------- Effects particles ----------
+// Each particle: position (x, h, y), velocity, life, size, colour, and a type that decides how it is drawn:
+//   glow  - additive dot (muzzle flash, shield fizz, general sparks)
+//   spark - additive streak that falls and fades fast
+//   ember - slow, bright, long-lived floating spark
+//   fire  - additive puff that grows and goes from yellow to red
+//   smoke - dark puff that grows and fades slowly
+//   debris- dark chunk tumbling out
 function burst(x, y, n, color, sp) {
   for (let i = 0; i < n; i++) {
     const a = rand(0, Math.PI * 2), v = rand(sp * 0.2, sp);
-    parts.push({ x, y, h: rand(-4, 6), vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rand(0.3, 0.8), max: 0.8, color });
+    parts.push({ k: 'glow', x, y, h: rand(-4, 6), vx: Math.cos(a) * v, vy: Math.sin(a) * v, vh: 0, life: rand(0.3, 0.8), max: 0.8, size: 2, color });
   }
+}
+function sparks(x, y, n, k) {
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, Math.PI * 2), v = rand(90, 460) * k;
+    parts.push({ k: 'spark', x, y, h: rand(0, 8), vx: Math.cos(a) * v, vy: Math.sin(a) * v, vh: rand(20, 160) * k, life: rand(0.25, 0.7), max: 0.7, size: rand(2, 3.6), color: pick(['#fff3d6', '#ffd27a', '#ffb15c']) });
+  }
+}
+function smoke(x, y, n, k) {
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, Math.PI * 2), v = rand(8, 40) * k, life = rand(1.2, 2.6) * (0.6 + k * 0.4);
+    parts.push({ k: 'smoke', x: x + rand(-4, 4), y: y + rand(-4, 4), h: rand(4, 12), vx: Math.cos(a) * v, vy: Math.sin(a) * v, vh: rand(6, 22), life, max: life, size: rand(12, 20) * (0.6 + k * 0.5), grow: rand(14, 28) * k, color: '#77726c' });
+  }
+}
+// A big hit: a flash, a fireball, sparks, embers, debris and a rolling cloud of smoke. dirX/dirY tilt the spray along the shot.
+function impact(x, y, k, debrisCol, dirX, dirY) {
+  const v = Math.hypot(dirX || 0, dirY || 0) || 1, bx = (dirX || 0) / v, by = (dirY || 0) / v;
+  burst(x, y, Math.round(26 * k), '#fff3d6', 260 * k);
+  sparks(x, y, Math.round(40 * k), k);
+  for (let i = 0; i < 14 * k; i++) {
+    const a = rand(0, Math.PI * 2), sp = rand(10, 70) * k, life = rand(0.4, 0.9);
+    parts.push({ k: 'fire', x, y, h: rand(0, 10), vx: Math.cos(a) * sp + bx * 40, vy: Math.sin(a) * sp + by * 40, vh: rand(5, 30), life, max: life, size: rand(14, 26) * k, grow: 40 * k, color: '#ffb35a' });
+  }
+  for (let i = 0; i < 12 * k; i++) {
+    const a = rand(0, Math.PI * 2), sp = rand(30, 120) * k, life = rand(1.4, 3);
+    parts.push({ k: 'ember', x, y, h: rand(0, 10), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vh: rand(0, 40), life, max: life, size: rand(1.8, 3), color: '#ff9a3c' });
+  }
+  for (let i = 0; i < 10 * k; i++) {
+    const a = rand(0, Math.PI * 2), sp = rand(60, 220) * k, life = rand(1.2, 2.4);
+    parts.push({ k: 'debris', x, y, h: rand(0, 10), vx: Math.cos(a) * sp + bx * 80, vy: Math.sin(a) * sp + by * 80, vh: rand(-20, 80), life, max: life, size: rand(2.5, 5), color: debrisCol || pick(['#4a4f58', '#2e3238', '#6b6258']) });
+  }
+  smoke(x, y, Math.round(12 * k), k);
+  if (GL) { GL.flash.position.set(x, 50, y); GL.flash.intensity = Math.max(GL.flash.intensity, 3 * k); }
+}
+
+// Phone buzz on big moments: the native haptics plugin in the app, the browser's vibrate otherwise.
+let hapt;
+function buzz(kind) {
+  if (reduceMotion) return;
+  try {
+    if (hapt === undefined) {
+      const cap = window.Capacitor;
+      hapt = (cap && cap.isNativePlatform && cap.isNativePlatform() && ((cap.Plugins && cap.Plugins.Haptics) || (cap.registerPlugin && cap.registerPlugin('Haptics')))) || null;
+    }
+    const ms = { light: 25, medium: 60, heavy: 160, death: 450 }[kind] || 40;
+    if (hapt) {
+      if (kind === 'light') hapt.impact({ style: 'LIGHT' });
+      else hapt.vibrate({ duration: ms });
+    } else if (navigator.vibrate) navigator.vibrate(kind === 'death' ? [200, 80, 250] : kind === 'heavy' ? [90, 40, 70] : ms);
+  } catch (e) { /* no vibration on this device */ }
 }
 
 // ---------- Piloting ----------
@@ -330,7 +440,7 @@ function burst(x, y, n, color, sp) {
 function shouldRun(s, other) {
   const w = bigGun(s);
   if (!weaponOnline(s, w) || !contact || other.dead) return false;
-  const remaining = w.interval - s.wt[1];
+  const remaining = w.interval - s.wt[1] + (w.lockT ? (1 - s.lock[1]) * w.lockT * 0.5 : 0);
   const swing = Math.abs(angDiff(bearing(s, other), s.ang)) / (turnRate(s) * DEG * 0.8);
   return remaining <= swing + 1.5 && Math.hypot(other.x - s.x, other.y - s.y) > 260;
 }
@@ -364,6 +474,15 @@ function updateMove(s, other, dt) {
   if (s.mode === 'break' && s.modeT <= 0) { s.mode = 'orbit'; s.orbit = Math.atan2(s.y - other.y, s.x - other.x); s.radius = rand(340, 460); }
 
   let gx, gy, speedK = 1;
+  const torp = shots.find(p => p.w.kind === 'torpedo' && p.tgt === s && p.life > 0);
+  if (torp && s.mode !== 'run') {
+    // A torpedo is chasing us: run straight away from it. Enough engine power and it runs out of fuel first.
+    const d = Math.hypot(s.x - torp.x, s.y - torp.y) || 1;
+    gx = s.x + (s.x - torp.x) / d * 600; gy = s.y + (s.y - torp.y) / d * 600;
+    if (Math.hypot(gx, gy) > 1500) { gx -= gx * 0.6; gy -= gy * 0.6; }
+    steer(s, gx, gy, other, 1.15, dt);
+    return;
+  }
   if (s.mode === 'run') {
     const lead = d2o / w.speed;                              // aim at where the enemy will be when the shot arrives
     gx = other.x + other.vx * lead; gy = other.y + other.vy * lead;
@@ -416,6 +535,11 @@ function steer(s, gx, gy, other, speedK, dt) {
   s.bank += (clamp(turn / Math.max(1e-6, tr * dt), -1, 1) * 0.7 - s.bank) * Math.min(1, dt * 3);
 }
 function integrate(s, dt) {
+  if (s.yawV) {                                              // spin from a heavy hit, which the pilot fights back out of
+    s.ang = angDiff(s.ang + s.yawV * dt, 0);
+    s.yawV *= Math.exp(-dt * 2.2);
+    if (Math.abs(s.yawV) < 0.01) s.yawV = 0;
+  }
   const slipDecay = Math.exp(-dt * 1.5);
   s.slipX *= slipDecay; s.slipY *= slipDecay;
   s.vx = Math.cos(s.ang) * s.speed + s.slipX;
@@ -517,7 +641,31 @@ function battleTick(dt) {
 }
 
 function updateFx(dt) {
-  const f = Math.pow(0.96, dt * 60);
-  for (const q of parts) { q.life -= dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= f; q.vy *= f; }
+  const f = Math.pow(0.96, dt * 60), fs = Math.pow(0.985, dt * 60);
+  for (const q of parts) {
+    q.life -= dt;
+    const drag = q.k === 'smoke' || q.k === 'debris' || q.k === 'ember' ? fs : f;
+    q.x += q.vx * dt; q.y += q.vy * dt; q.h += (q.vh || 0) * dt;
+    q.vx *= drag; q.vy *= drag;
+    if (q.k === 'spark' || q.k === 'debris') q.vh -= 140 * dt;
+    else if (q.vh) q.vh *= drag;
+    if (q.grow) q.size += q.grow * dt;
+  }
   parts = parts.filter(q => q.life > 0);
+  if (parts.length > 2400) parts.splice(0, parts.length - 2400);
+  [P, E].forEach(s => { if (s && !s.hidden && !s.blown && s.warp === 0) damageFx(s, dt); });
+}
+// Damage shows on the hull as it builds up: smoke from about a quarter down, sparks past half, flames when it's nearly gone.
+function damageFx(s, dt) {
+  const d = 1 - s.hull / s.def.hullMax;
+  s.dmgFx += (d - s.dmgFx) * Math.min(1, dt * 2);
+  if (d < 0.22) return;
+  const side = Math.random() < 0.5 ? -1 : 1, back = rand(-22, 10);
+  const px = s.x + Math.cos(s.ang) * back - Math.sin(s.ang) * side * rand(0, 12), py = s.y + Math.sin(s.ang) * back + Math.cos(s.ang) * side * rand(0, 12);
+  if (Math.random() < dt * (5 + d * 22)) smoke(px, py, 1, 0.5 + d * 0.6);
+  if (d > 0.45 && Math.random() < dt * (d * 7)) sparks(px, py, 5, 0.6);
+  if (d > 0.75 && Math.random() < dt * 8) {
+    const life = rand(0.3, 0.6);
+    parts.push({ k: 'fire', x: px, y: py, h: rand(8, 14), vx: rand(-10, 10), vy: rand(-10, 10), vh: rand(10, 30), life, max: life, size: rand(7, 12), grow: 16, color: '#ff9a3c' });
+  }
 }

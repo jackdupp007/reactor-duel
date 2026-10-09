@@ -38,10 +38,10 @@ const SHIPS = {
       engines: { name: 'Mk I drive', eff: 0.85, cap: 6 }
     },
     weapons: [
-      { name: 'Pulse laser', short: 'laser', mount: 'turret', arc: 30, traverse: 70, mountX: -18,
+      { name: 'Pulse laser', short: 'laser', mount: 'turret', arc: 30, traverse: 70, mountX: -17,
         min: 1, cap: 3, base: 3, per: 1.5, interval: 2.2, speed: 600, acc: 0.95, falloff: 0.35, pierce: 0, color: '#ffb070', kind: 'bolt' },
       { name: 'Rail cannon', short: 'rail', nick: 'Doris', label: 'Rail', mount: 'fixed', arc: 20,
-        min: 4, cap: 7, base: 18, per: 3, interval: 8, speed: 1000, acc: 0.95, falloff: 0.15, pierce: 0.35, color: '#fff1c2', kind: 'rail' }
+        min: 4, cap: 7, base: 30, per: 4, interval: 8, speed: 1000, acc: 0.95, falloff: 0.15, pierce: 0.35, color: '#fff1c2', kind: 'rail' }
     ],
     alloc: { shields: 4, weapons: 3, engines: 3 },
     ai: { base: { shields: 4, weapons: 3, engines: 3 }, charge: { shields: 2, weapons: 5, engines: 3 }, recover: { shields: 5, weapons: 3, engines: 2 }, skirmish: [10, 14], recoverT: 6 }
@@ -56,10 +56,14 @@ const SHIPS = {
       engines: { name: 'Worn thrusters', eff: 0.7, cap: 5 }
     },
     weapons: [
-      { name: 'Autocannon', short: 'autocannon', mount: 'turret', arc: 40, traverse: 45, mountX: -14,
-        min: 1, cap: 3, base: 3, per: 1.2, interval: 1.8, speed: 520, acc: 0.92, falloff: 0.4, pierce: 0, color: '#ff7a55', kind: 'bolt' },
+      // Fires bursts of 6: each round is weak but rolls its own hit, so damage arrives steadily rather than all-or-nothing.
+      { name: 'Autocannon', short: 'autocannon', mount: 'turret', arc: 40, traverse: 45, mountX: -12, burst: 6, gap: 0.1,
+        min: 1, cap: 3, base: 0.8, per: 0.35, interval: 2.6, speed: 560, acc: 0.97, falloff: 0.25, pierce: 0, color: '#ff7a55', kind: 'bolt' },
       { name: 'Torpedo', short: 'torpedo', nick: 'Bertha', label: 'Torpedo', mount: 'fixed', arc: 60,
-        min: 5, cap: 6, base: 32, per: 3, interval: 14, speed: 120, pierce: 0.2, color: '#ff3b5c', kind: 'torpedo', evadeMult: 0.55 }
+        min: 5, cap: 6, base: 32, per: 3, interval: 14, pierce: 0.2, color: '#ff3b5c', kind: 'torpedo',
+        // Once charged it needs lockT seconds of the target in its arc to lock, then launches by itself.
+        // It boosts straight ahead, then chases (speed, turn rad/s) until its fuel runs out and it blows up harmlessly.
+        lockT: 4, boost: 1.2, boostSpeed: 190, speed: 120, turn: 1.5, fuel: 11 }
     ],
     alloc: { shields: 4, weapons: 4, engines: 2 },
     ai: { base: { shields: 4, weapons: 4, engines: 2 }, charge: { shields: 1, weapons: 6, engines: 3 }, recover: { shields: 5, weapons: 3, engines: 2 }, skirmish: [14, 20], recoverT: 9 }
@@ -191,6 +195,8 @@ function makeShip(key, x, y, crewSel, withBrain) {
     orbit: rand(0, Math.PI * 2), orbitDir: Math.random() < 0.5 ? 1 : -1, radius: rand(320, 460), retune: rand(6, 12),
     mode: 'orbit', modeT: 0, speed: 60, slipX: 0, slipY: 0, jumping: 0, bumpT: 0, breakX: 0, breakY: 0, runShot: 0,
     wt: weapons.map(() => rand(0, 0.4)), tr: weapons.map(() => 0),
+    lock: weapons.map(() => 0), burst: weapons.map(() => 0), burstT: weapons.map(() => 0),
+    yawV: 0, jolt: null, dmgFx: 0,
     flash: 0, spool: 0, dead: false, trail: [], warp: 0, hidden: false, manual: false,
     brain: withBrain ? { phase: 'skirmish', t: rand(def.ai.skirmish[0] - 4, def.ai.skirmish[1] - 6) } : null
   };
@@ -283,9 +289,11 @@ function updateShields(s, dt) {
 }
 
 // ---------- Weapons: charge, track, fire when in arc with a clear line ----------
+// Bursts (autocannon) fire their rounds a short gap apart. Torpedoes, once charged, build a lock while the target
+// stays in their arc, and launch by themselves when the lock completes.
 function updateWeapons(s, foe, dt) {
   if (s.dead || s.warp > 0) return;
-  const close = inRange() && !foe.dead && foe.warp === 0;
+  const close = inRange() && !foe.dead && foe.warp === 0 && !foe.hidden;
   s.weapons.forEach((w, i) => {
     const online = weaponOnline(s, w);
     if (w.mount === 'turret' && online) {
@@ -294,36 +302,61 @@ function updateWeapons(s, foe, dt) {
       s.tr[i] += clamp(angDiff(want, s.tr[i]), -step, step);
       s.tr[i] = angDiff(s.tr[i], 0);
     }
-    if (online) {
-      s.wt[i] = Math.min(w.interval, s.wt[i] + dt);
-      if (s.wt[i] >= w.interval && close && inArc(s, w, i, foe) && clearShot(s, foe)) { s.wt[i] = 0; fire(s, foe, w, i); }
-    } else {
+    if (!online) {
       s.wt[i] = Math.max(0, s.wt[i] - dt * (w.kind === 'torpedo' ? 0.4 : 0.15)); // unpowered weapons hold most of their charge
+      s.lock[i] = Math.max(0, s.lock[i] - dt / 2); s.burst[i] = 0;
+      return;
+    }
+    const ready = () => close && inArc(s, w, i, foe) && clearShot(s, foe);
+    if (s.burst[i] > 0) {                                     // rest of a burst
+      s.burstT[i] -= dt;
+      if (s.burstT[i] <= 0) {
+        if (ready()) { fire(s, foe, w, i); s.burst[i]--; s.burstT[i] = w.gap; }
+        else s.burst[i] = 0;
+      }
+      return;
+    }
+    s.wt[i] = Math.min(w.interval, s.wt[i] + dt);
+    if (s.wt[i] < w.interval) return;
+    if (w.kind === 'torpedo') {
+      const was = s.lock[i];
+      s.lock[i] = ready() ? Math.min(1, s.lock[i] + dt / w.lockT) : Math.max(0, s.lock[i] - dt / (w.lockT * 0.75));
+      if (was === 0 && s.lock[i] > 0 && s === E) crewEvent('enemyLock');
+      if (s.lock[i] >= 1) { s.lock[i] = 0; s.wt[i] = 0; fire(s, foe, w, i); }
+      return;
+    }
+    if (ready()) {
+      s.wt[i] = 0;
+      if (w.burst) { s.burst[i] = w.burst - 1; s.burstT[i] = w.gap; }
+      fire(s, foe, w, i);
     }
   });
 }
 
 function weaponStatus(s, w, i, foe) {
   if (!weaponOnline(s, w)) return { text: `needs ${w.min}`, off: true };
+  if (s.burst[i] > 0) return { text: 'firing' };
   if (s.wt[i] < w.interval) return { text: `charging ${Math.floor(s.wt[i] / w.interval * 100)}%` };
   if (!inRange()) return { text: 'out of range' };
   if (!clearShot(s, foe)) return { text: 'blocked' };
   if (!inArc(s, w, i, foe)) return { text: w.mount === 'turret' ? 'tracking' : 'lining up' };
+  if (w.kind === 'torpedo') return { text: `locking ${Math.floor(s.lock[i] * 100)}%` };
   return { text: 'firing' };
 }
 
 function fire(s, foe, w, i) {
   const dmg = weaponDmg(s, w);
   const a0 = weaponAim(s, w, i);
-  const mb = muzzleBase(s, w), reach = w.mount === 'turret' ? 9 : 30;
+  const mb = muzzleBase(s, w), reach = w.mount === 'turret' ? 7 : 30;
   const ox = mb.x + Math.cos(a0) * reach, oy = mb.y + Math.sin(a0) * reach;
-  burst(ox, oy, 5, w.color, 70);
+  burst(ox, oy, w.burst ? 3 : 5, w.color, 70);
   let p;
   if (w.kind === 'torpedo') {
-    // Guided: target lock, so only the target's engines can shake it.
-    const hit = Math.random() >= evasion(foe) * w.evadeMult;
-    p = { x: ox, y: oy, src: s, tgt: foe, w, dmg, hit, life: 24, age: 0, homing: true, missOff: (Math.random() < 0.5 ? -1 : 1) * rand(55, 95), trail: [] };
-    p.vx = Math.cos(a0) * w.speed; p.vy = Math.sin(a0) * w.speed;
+    // Guided, but physical: it hits only if it actually reaches the target before its fuel runs out.
+    p = { x: ox, y: oy, src: s, tgt: foe, w, dmg, life: w.fuel, age: 0, homing: true, trail: [] };
+    p.vx = Math.cos(a0) * w.boostSpeed; p.vy = Math.sin(a0) * w.boostSpeed;
+    burst(ox, oy, 14, '#ffd0a0', 120);
+    stats.torps = (stats.torps || 0) + 1;
   } else {
     // Unguided: aim at where the target will be; a miss is aimed deliberately to one side. Flight is a straight line.
     const hit = Math.random() < hitChance(s, w, foe);
@@ -337,7 +370,7 @@ function fire(s, foe, w, i) {
   shots.push(p);
   s.muzzle = 1;
   SFX.shot(w.kind, s === P, ox, oy);
-  if (w.kind === 'rail') camShake(3);
+  if (w.kind === 'rail') { camShake(4); if (s === P) buzz('light'); }
   if (w.mount === 'fixed') {
     if (s === E) crewEvent('inBigLaunch');
     if (s.brain) { s.brain.phase = 'recover'; s.brain.t = s.def.ai.recoverT; s.target = { ...s.def.ai.recover }; }
@@ -345,6 +378,7 @@ function fire(s, foe, w, i) {
 }
 
 function evaded(t, p) {
+  if (p.w.burst) { if (time - (t.evTick || -9) < 1) return; t.evTick = time; }   // one "evaded" per burst is plenty
   hudTick(t === P ? 'p' : 'e', 'evade', 'evaded');
   if (t === P) { stats.evaded++; if (p.w.mount === 'fixed') crewEvent('inBigEvaded'); }
   if (p.src === P && p.w.mount === 'fixed') crewEvent('bigMiss');
@@ -356,26 +390,21 @@ function updateShots(dt) {
     const t = p.tgt;
     const alive = !t.dead && t.warp === 0;
     if (p.w.kind === 'torpedo') {
-      let tx = t.x, ty = t.y;
-      if (!p.hit) {
-        const pa = Math.atan2(t.y - p.y, t.x - p.x) + Math.PI / 2;
-        tx += Math.cos(pa) * p.missOff; ty += Math.sin(pa) * p.missOff;
+      // Boost straight out, then ease down to cruise speed and chase with a limited turn rate.
+      const cur = Math.atan2(p.vy, p.vx), w = p.w;
+      let na = cur, sp = w.boostSpeed;
+      if (p.age > w.boost) {
+        sp = w.speed + (w.boostSpeed - w.speed) * Math.exp(-(p.age - w.boost) * 3);
+        if (alive) na = cur + clamp(angDiff(Math.atan2(t.y - p.y, t.x - p.x), cur), -w.turn * dt, w.turn * dt);
       }
-      const dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy) || 1;
-      if (p.homing) {
-        const cur = Math.atan2(p.vy, p.vx), want = Math.atan2(dy, dx);
-        const turn = (p.age > 4 ? 4 : 1.2) * dt;
-        const na = cur + clamp(angDiff(want, cur), -turn, turn);
-        p.vx = Math.cos(na) * p.w.speed; p.vy = Math.sin(na) * p.w.speed;
-      }
+      p.vx = Math.cos(na) * sp; p.vy = Math.sin(na) * sp;
       p.x += p.vx * dt; p.y += p.vy * dt;
       p.trail.push(p.x, p.y); if (p.trail.length > 40) p.trail.splice(0, 2);
+      if (Math.random() < dt * 14) smoke(p.x - p.vx * 0.03, p.y - p.vy * 0.03, 1, 0.5);
       const hitRock = rocks.find(r => Math.hypot(p.x - r.x, p.y - r.y) < r.cr);
       if (hitRock) { rockHit(p, hitRock); continue; }
-      if (p.homing) {
-        if (p.hit && d < 16) { if (alive) applyDamage(t, p.dmg, p.w.pierce, p); p.life = 0; }
-        else if (!p.hit && d < 110) { p.homing = false; jink(t); evaded(t, p); }
-      }
+      if (alive && Math.hypot(t.x - p.x, t.y - p.y) < SHIP_R) { stats.torpHit = (stats.torpHit || 0) + 1; applyDamage(t, p.dmg, w.pierce, p); p.life = 0; continue; }
+      if (p.life <= 0) torpFizzle(p, alive);
       continue;
     }
     const ax = p.x, ay = p.y;
@@ -391,11 +420,21 @@ function updateShots(dt) {
   shots = shots.filter(p => { if (p.life > 0) return true; disposeShot(p); return false; });
 }
 
+// Out of fuel: the torpedo blows itself up, harmlessly.
+function torpFizzle(p, alive) {
+  stats.torpFizz = (stats.torpFizz || 0) + 1;
+  impact(p.x, p.y, 1, null);
+  SFX.boom(true, p.x, p.y);
+  if (alive) evaded(p.tgt, p);
+}
+
 // A shot strikes an asteroid: sparks and rock dust, and the shot is spent.
 function rockHit(p, r) {
   const big = p.w.kind !== 'bolt';
-  burst(p.x, p.y, big ? 26 : 8, big ? '#ffd7a0' : p.w.color, big ? 220 : 110);
-  burst(p.x, p.y, big ? 14 : 4, fieldKind === 'ice' ? '#bfe6ff' : '#8d8a86', 90);
+  const rockCol = fieldKind === 'ice' ? '#bfe6ff' : '#8d8a86';
+  if (p.w.kind === 'torpedo') impact(p.x, p.y, 1.2, rockCol);
+  else if (big) impact(p.x, p.y, 0.6, rockCol);
+  else { burst(p.x, p.y, 8, p.w.color, 110); burst(p.x, p.y, 4, rockCol, 90); }
   p.life = 0;
   SFX.rock(big, p.x, p.y);
   if (p.w.kind === 'torpedo') { camShake(5); if (p.tgt === P) crewEvent('torpRock'); }
@@ -419,22 +458,40 @@ function applyDamage(t, dmg, pierce, p) {
   t.hull = Math.max(0, t.hull - hullD);
   t.sinceHit = 0;
   if (t === P) stats.taken += hullD; else stats.dealt += dmg;
-  const col = shielded ? C.shield : (p.w.kind === 'torpedo' ? C.danger : '#ffcf9e');
-  burst(p.x, p.y, shielded ? 6 : 12, col, shielded ? 120 : 200);
+  const big = p.w.mount === 'fixed';
+  if (shielded && hullD < 0.5) burst(p.x, p.y, big ? 30 : 6, C.shield, big ? 240 : 120);
+  else if (big) impact(p.x, p.y, p.w.kind === 'torpedo' ? 2.2 : 1.6, null, p.vx, p.vy);
+  else if (p.w.kind === 'ram') impact(p.x, p.y, 0.5, null);
+  else { burst(p.x, p.y, 10, '#ffcf9e', 200); sparks(p.x, p.y, 10, 1); smoke(p.x, p.y, 2, 0.7); }
+  if (shielded && hullD >= 0.5) burst(p.x, p.y, 10, C.shield, 160);
+  if (big) knock(t, p, shielded && hullD < 0.5 ? 0.45 : 1);
   const who = t === P ? 'p' : 'e';
   if (shD > 0.2) hudTick(who, 'sh', shD);
   if (hullD > 0.2) hudTick(who, 'hull', hullD);
   SFX.hit(shielded && hullD < 0.5, t === P, p.x, p.y);
-  if (p.w.kind === 'torpedo' && t === P) { camShake(9); crewEvent('inBigHit'); }
-  if (p.w.kind === 'rail' && t === P) crewEvent('inBigHit');
+  if (big && t === P) { camShake(p.w.kind === 'torpedo' ? 12 : 9); crewEvent('inBigHit'); buzz('heavy'); }
+  else if (big) camShake(4);
+  if (p.w.kind === 'ram' && t === P) buzz('medium');
   if (p.src === P && p.w.mount === 'fixed') crewEvent('bigHit');
   if (p.w.kind === 'ram') camShake(6);
   if (t.hull <= 0 && !t.dead) kill(t);
 }
 
+// A heavy hit shoves the ship along the shot's path and spins it, harder the further off-centre the hit lands.
+function knock(t, p, k) {
+  const v = Math.hypot(p.vx, p.vy) || 1, dx = p.vx / v, dy = p.vy / v;
+  const kick = (p.w.kind === 'torpedo' ? 1.2 : 0.9) * k;
+  t.slipX += dx * 110 * kick; t.slipY += dy * 110 * kick;
+  const rx = p.x - t.x, ry = p.y - t.y, off = clamp((rx * dy - ry * dx) / 22, -1, 1);   // which side of centre it struck
+  const spin = (Math.abs(off) < 0.15 ? (Math.random() < 0.5 ? -0.3 : 0.3) : off) * 1.9 * kick;
+  t.yawV += spin;
+  t.jolt = { r: clamp(-off, -1, 1) * 0.45 * kick, p: 0.18 * kick, t: 0 };
+}
+
 function kill(s) {
   s.dead = true;
-  for (let i = 0; i < 4; i++) setTimeout(() => burst(s.x + rand(-12, 12), s.y + rand(-12, 12), 30, i % 2 ? C.weapon : '#fff3d6', 320), i * 140);
+  for (let i = 0; i < 4; i++) setTimeout(() => impact(s.x + rand(-14, 14), s.y + rand(-14, 14), 1, null), i * 160);
+  if (s === P) buzz('death');
   camShake(14);
   SFX.boom(false, s.x, s.y);
   crewEvent(s === P ? 'lose' : 'win');
@@ -450,11 +507,68 @@ function jink(s) {
   s.slipX += Math.cos(a) * imp; s.slipY += Math.sin(a) * imp;
 }
 
+// ---------- Effects particles ----------
+// Each particle: position (x, h, y), velocity, life, size, colour, and a type that decides how it is drawn:
+//   glow  - additive dot (muzzle flash, shield fizz, general sparks)
+//   spark - additive streak that falls and fades fast
+//   ember - slow, bright, long-lived floating spark
+//   fire  - additive puff that grows and goes from yellow to red
+//   smoke - dark puff that grows and fades slowly
+//   debris- dark chunk tumbling out
 function burst(x, y, n, color, sp) {
   for (let i = 0; i < n; i++) {
     const a = rand(0, Math.PI * 2), v = rand(sp * 0.2, sp);
-    parts.push({ x, y, h: rand(-4, 6), vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rand(0.3, 0.8), max: 0.8, color });
+    parts.push({ k: 'glow', x, y, h: rand(-4, 6), vx: Math.cos(a) * v, vy: Math.sin(a) * v, vh: 0, life: rand(0.3, 0.8), max: 0.8, size: 2, color });
   }
+}
+function sparks(x, y, n, k) {
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, Math.PI * 2), v = rand(90, 460) * k;
+    parts.push({ k: 'spark', x, y, h: rand(0, 8), vx: Math.cos(a) * v, vy: Math.sin(a) * v, vh: rand(20, 160) * k, life: rand(0.25, 0.7), max: 0.7, size: rand(2, 3.6), color: pick(['#fff3d6', '#ffd27a', '#ffb15c']) });
+  }
+}
+function smoke(x, y, n, k) {
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, Math.PI * 2), v = rand(8, 40) * k, life = rand(1.2, 2.6) * (0.6 + k * 0.4);
+    parts.push({ k: 'smoke', x: x + rand(-4, 4), y: y + rand(-4, 4), h: rand(4, 12), vx: Math.cos(a) * v, vy: Math.sin(a) * v, vh: rand(6, 22), life, max: life, size: rand(12, 20) * (0.6 + k * 0.5), grow: rand(14, 28) * k, color: '#77726c' });
+  }
+}
+// A big hit: a flash, a fireball, sparks, embers, debris and a rolling cloud of smoke. dirX/dirY tilt the spray along the shot.
+function impact(x, y, k, debrisCol, dirX, dirY) {
+  const v = Math.hypot(dirX || 0, dirY || 0) || 1, bx = (dirX || 0) / v, by = (dirY || 0) / v;
+  burst(x, y, Math.round(26 * k), '#fff3d6', 260 * k);
+  sparks(x, y, Math.round(40 * k), k);
+  for (let i = 0; i < 14 * k; i++) {
+    const a = rand(0, Math.PI * 2), sp = rand(10, 70) * k, life = rand(0.4, 0.9);
+    parts.push({ k: 'fire', x, y, h: rand(0, 10), vx: Math.cos(a) * sp + bx * 40, vy: Math.sin(a) * sp + by * 40, vh: rand(5, 30), life, max: life, size: rand(14, 26) * k, grow: 40 * k, color: '#ffb35a' });
+  }
+  for (let i = 0; i < 12 * k; i++) {
+    const a = rand(0, Math.PI * 2), sp = rand(30, 120) * k, life = rand(1.4, 3);
+    parts.push({ k: 'ember', x, y, h: rand(0, 10), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, vh: rand(0, 40), life, max: life, size: rand(1.8, 3), color: '#ff9a3c' });
+  }
+  for (let i = 0; i < 10 * k; i++) {
+    const a = rand(0, Math.PI * 2), sp = rand(60, 220) * k, life = rand(1.2, 2.4);
+    parts.push({ k: 'debris', x, y, h: rand(0, 10), vx: Math.cos(a) * sp + bx * 80, vy: Math.sin(a) * sp + by * 80, vh: rand(-20, 80), life, max: life, size: rand(2.5, 5), color: debrisCol || pick(['#4a4f58', '#2e3238', '#6b6258']) });
+  }
+  smoke(x, y, Math.round(12 * k), k);
+  if (GL) { GL.flash.position.set(x, 50, y); GL.flash.intensity = Math.max(GL.flash.intensity, 3 * k); }
+}
+
+// Phone buzz on big moments: the native haptics plugin in the app, the browser's vibrate otherwise.
+let hapt;
+function buzz(kind) {
+  if (reduceMotion) return;
+  try {
+    if (hapt === undefined) {
+      const cap = window.Capacitor;
+      hapt = (cap && cap.isNativePlatform && cap.isNativePlatform() && ((cap.Plugins && cap.Plugins.Haptics) || (cap.registerPlugin && cap.registerPlugin('Haptics')))) || null;
+    }
+    const ms = { light: 25, medium: 60, heavy: 160, death: 450 }[kind] || 40;
+    if (hapt) {
+      if (kind === 'light') hapt.impact({ style: 'LIGHT' });
+      else hapt.vibrate({ duration: ms });
+    } else if (navigator.vibrate) navigator.vibrate(kind === 'death' ? [200, 80, 250] : kind === 'heavy' ? [90, 40, 70] : ms);
+  } catch (e) { /* no vibration on this device */ }
 }
 
 // ---------- Piloting ----------
@@ -466,7 +580,7 @@ function burst(x, y, n, color, sp) {
 function shouldRun(s, other) {
   const w = bigGun(s);
   if (!weaponOnline(s, w) || !contact || other.dead) return false;
-  const remaining = w.interval - s.wt[1];
+  const remaining = w.interval - s.wt[1] + (w.lockT ? (1 - s.lock[1]) * w.lockT * 0.5 : 0);
   const swing = Math.abs(angDiff(bearing(s, other), s.ang)) / (turnRate(s) * DEG * 0.8);
   return remaining <= swing + 1.5 && Math.hypot(other.x - s.x, other.y - s.y) > 260;
 }
@@ -500,6 +614,15 @@ function updateMove(s, other, dt) {
   if (s.mode === 'break' && s.modeT <= 0) { s.mode = 'orbit'; s.orbit = Math.atan2(s.y - other.y, s.x - other.x); s.radius = rand(340, 460); }
 
   let gx, gy, speedK = 1;
+  const torp = shots.find(p => p.w.kind === 'torpedo' && p.tgt === s && p.life > 0);
+  if (torp && s.mode !== 'run') {
+    // A torpedo is chasing us: run straight away from it. Enough engine power and it runs out of fuel first.
+    const d = Math.hypot(s.x - torp.x, s.y - torp.y) || 1;
+    gx = s.x + (s.x - torp.x) / d * 600; gy = s.y + (s.y - torp.y) / d * 600;
+    if (Math.hypot(gx, gy) > 1500) { gx -= gx * 0.6; gy -= gy * 0.6; }
+    steer(s, gx, gy, other, 1.15, dt);
+    return;
+  }
   if (s.mode === 'run') {
     const lead = d2o / w.speed;                              // aim at where the enemy will be when the shot arrives
     gx = other.x + other.vx * lead; gy = other.y + other.vy * lead;
@@ -552,6 +675,11 @@ function steer(s, gx, gy, other, speedK, dt) {
   s.bank += (clamp(turn / Math.max(1e-6, tr * dt), -1, 1) * 0.7 - s.bank) * Math.min(1, dt * 3);
 }
 function integrate(s, dt) {
+  if (s.yawV) {                                              // spin from a heavy hit, which the pilot fights back out of
+    s.ang = angDiff(s.ang + s.yawV * dt, 0);
+    s.yawV *= Math.exp(-dt * 2.2);
+    if (Math.abs(s.yawV) < 0.01) s.yawV = 0;
+  }
   const slipDecay = Math.exp(-dt * 1.5);
   s.slipX *= slipDecay; s.slipY *= slipDecay;
   s.vx = Math.cos(s.ang) * s.speed + s.slipX;
@@ -653,9 +781,33 @@ function battleTick(dt) {
 }
 
 function updateFx(dt) {
-  const f = Math.pow(0.96, dt * 60);
-  for (const q of parts) { q.life -= dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= f; q.vy *= f; }
+  const f = Math.pow(0.96, dt * 60), fs = Math.pow(0.985, dt * 60);
+  for (const q of parts) {
+    q.life -= dt;
+    const drag = q.k === 'smoke' || q.k === 'debris' || q.k === 'ember' ? fs : f;
+    q.x += q.vx * dt; q.y += q.vy * dt; q.h += (q.vh || 0) * dt;
+    q.vx *= drag; q.vy *= drag;
+    if (q.k === 'spark' || q.k === 'debris') q.vh -= 140 * dt;
+    else if (q.vh) q.vh *= drag;
+    if (q.grow) q.size += q.grow * dt;
+  }
   parts = parts.filter(q => q.life > 0);
+  if (parts.length > 2400) parts.splice(0, parts.length - 2400);
+  [P, E].forEach(s => { if (s && !s.hidden && !s.blown && s.warp === 0) damageFx(s, dt); });
+}
+// Damage shows on the hull as it builds up: smoke from about a quarter down, sparks past half, flames when it's nearly gone.
+function damageFx(s, dt) {
+  const d = 1 - s.hull / s.def.hullMax;
+  s.dmgFx += (d - s.dmgFx) * Math.min(1, dt * 2);
+  if (d < 0.22) return;
+  const side = Math.random() < 0.5 ? -1 : 1, back = rand(-22, 10);
+  const px = s.x + Math.cos(s.ang) * back - Math.sin(s.ang) * side * rand(0, 12), py = s.y + Math.sin(s.ang) * back + Math.cos(s.ang) * side * rand(0, 12);
+  if (Math.random() < dt * (5 + d * 22)) smoke(px, py, 1, 0.5 + d * 0.6);
+  if (d > 0.45 && Math.random() < dt * (d * 7)) sparks(px, py, 5, 0.6);
+  if (d > 0.75 && Math.random() < dt * 8) {
+    const life = rand(0.3, 0.6);
+    parts.push({ k: 'fire', x: px, y: py, h: rand(8, 14), vx: rand(-10, 10), vy: rand(-10, 10), vh: rand(10, 30), life, max: life, size: rand(7, 12), grow: 16, color: '#ff9a3c' });
+  }
 }
 
 // ---- 03-audio.js ----
@@ -839,7 +991,7 @@ const VIS = {
     tint: 0x3a4d63, outline: [[26, 0], [-6, 13], [-16, 15], [-10, 5], [-18, 4], [-18, -4], [-10, -5], [-16, -15], [-6, -13]],
     engines: [[-31, 8.9, -5.1], [-31, 8.9, 5.1]],
     mounts: [
-      { weapon: 0, turret: true, model: 'models/laser-turret.json', rotY: Math.PI / 2, scale: 12, at: [-18.3, 12.6, 0] },
+      { weapon: 0, turret: true, model: 'models/laser-turret.json', rotY: Math.PI / 2, scale: 8, centre: [0, -0.053], at: [-17.1, 12.4, 0] },
       { weapon: 1, turret: false, model: 'models/railgun.json', rotY: Math.PI, scale: 15, at: [13.5, 10.4, 0] }
     ]
   },
@@ -847,7 +999,7 @@ const VIS = {
     hull: 'models/corsair.json', rotY: Math.PI / 2, scale: 66, glow: 0xffaa78, trail: [1, 0.55, 0.4], shieldR: 42,
     tint: 0x5c3b2c, outline: [[22, 5], [22, -5], [10, -9], [6, -18], [-14, -18], [-22, -8], [-22, 8], [-14, 18], [6, 18], [10, 9]],
     engines: [[-32.4, 11.4, -8.2], [-32.4, 11.4, 0], [-32.4, 11.4, 8.2], [-32.4, 5.3, -9.9], [-32.4, 5.3, 0], [-32.4, 5.3, 9.9]],
-    mounts: [{ weapon: 0, turret: true, model: 'models/autocannon.json', rotY: Math.PI / 2, scale: 14, at: [-13.9, 15.6, 0] }]
+    mounts: [{ weapon: 0, turret: true, model: 'models/autocannon.json', rotY: Math.PI / 2, scale: 9.4, centre: [0.025, -0.116], at: [-11.9, 16, 0] }]
   }
 };
 const ROCK_FILES = {
@@ -910,22 +1062,15 @@ function initGL() {
   });
 
   const glowTex = radialTex([[0, 'rgba(255,255,255,1)'], [0.22, 'rgba(255,255,255,0.65)'], [1, 'rgba(255,255,255,0)']]);
-  const dotTex = radialTex([[0, 'rgba(255,255,255,1)'], [0.5, 'rgba(255,255,255,0.5)'], [1, 'rgba(255,255,255,0)']], 64);
 
-  // Particles share one Points buffer.
-  const PCAP = 1200;
-  const pPos = new Float32Array(PCAP * 3), pCol = new Float32Array(PCAP * 3);
-  const pGeo = new THREE.BufferGeometry();
-  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
-  pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
-  const points = new THREE.Points(pGeo, new THREE.PointsMaterial({ size: 4, map: dotTex, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-  points.frustumCulled = false; scene.add(points);
+  // Particles: one glowing (additive) system for sparks and fire, one ordinary system for smoke and debris.
+  const psAdd = makeParticles(scene, 2000, true), psDark = makeParticles(scene, 1400, false);
 
   const shieldGeo = new THREE.SphereGeometry(1, 40, 20);
   const shieldVS = 'varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }';
   const shieldFS = 'uniform vec3 color; uniform float opacity; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(vN, vV)), 2.4); gl_FragColor = vec4(color * (f * 1.5 + 0.05), opacity); }';
 
-  GL = { renderer, scene, camera, flash, nebs, glowTex, PCAP, pPos, pCol, pGeo, shieldGeo, shieldVS, shieldFS, mats: {}, colors: {} };
+  GL = { renderer, scene, camera, flash, nebs, glowTex, psAdd, psDark, shieldGeo, shieldVS, shieldFS, mats: {}, colors: {} };
   GL.fieldGroup = new THREE.Group(); scene.add(GL.fieldGroup);
   GL.station = buildStation();
   GL.tunnel = buildTunnel();
@@ -937,6 +1082,30 @@ function initGL() {
     torp: new THREE.SphereGeometry(2.6, 16, 10)
   };
   return GL;
+}
+
+// Round soft points with their own size (world units) and alpha. "hard" sharpens the edge (debris).
+const PS_VS = [
+  'attribute float size; attribute vec4 rgba; attribute float hard; uniform float scale;',
+  'varying vec4 vC; varying float vH;',
+  'void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vC = rgba; vH = hard;',
+  '  gl_PointSize = max(1.5, size * scale / -mv.z); gl_Position = projectionMatrix * mv; }'].join('\n');
+const PS_FS = [
+  'varying vec4 vC; varying float vH;',
+  'void main(){ float d = length(gl_PointCoord - 0.5) * 2.0; if (d > 1.0) discard;',
+  '  float a = mix(pow(1.0 - d, 1.6), 1.0 - smoothstep(0.6, 1.0, d), vH);',
+  '  gl_FragColor = vec4(vC.rgb, vC.a * a); }'].join('\n');
+function makeParticles(scene, cap, additive) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(cap * 3), rgba = new Float32Array(cap * 4), size = new Float32Array(cap), hard = new Float32Array(cap);
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('rgba', new THREE.BufferAttribute(rgba, 4));
+  geo.setAttribute('size', new THREE.BufferAttribute(size, 1));
+  geo.setAttribute('hard', new THREE.BufferAttribute(hard, 1));
+  const mat = new THREE.ShaderMaterial({ uniforms: { scale: { value: 1 } }, vertexShader: PS_VS, fragmentShader: PS_FS,
+    transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending });
+  const pts = new THREE.Points(geo, mat); pts.frustumCulled = false; pts.renderOrder = additive ? 3 : 2; scene.add(pts);
+  return { geo, pos, rgba, size, hard, cap, mat, n: 0 };
 }
 
 const colorOf = c => GL.colors[c] || (GL.colors[c] = new THREE.Color(c));
@@ -963,11 +1132,13 @@ function preloadModels(onProgress) {
   }).catch(() => { failed++; }).then(() => { done++; onProgress && onProgress(done / all.length); }))).then(() => failed);
 }
 // Wrap a template clone with its orientation and scale.
-function fitModel(url, rotY, scale, tint) {
+// centre: the model-space (x, z) point that should sit on the group's origin (a turret's base, so it spins on its ring).
+function fitModel(url, rotY, scale, tint, centre) {
   const src = tpl[url]; if (!src) return null;
   const obj = src.clone();
   if (tint) obj.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiply(new THREE.Color(tint)); } });
   obj.rotation.y = rotY; obj.scale.setScalar(scale);
+  if (centre) obj.position.copy(new THREE.Vector3(centre[0], 0, centre[1]).applyEuler(obj.rotation).multiplyScalar(-scale));
   const g = new THREE.Group(); g.add(obj); return g;
 }
 
@@ -990,9 +1161,16 @@ function buildShipVis(s, isPlayer) {
   const root = new THREE.Group(), tilt = new THREE.Group(), hullSlot = new THREE.Group();
   root.add(tilt); tilt.add(hullSlot);
   hullSlot.add(fitModel(vis.hull, vis.rotY, vis.scale, tint) || placeholderHull(vis));
+  // Own copies of the hull materials, so damage can scorch this ship only.
+  const hullMats = [];
+  hullSlot.traverse(o => { if (o.isMesh && o.material) { o.material = o.material.clone(); hullMats.push({ m: o.material, base: o.material.color.clone() }); } });
+  const fires = [0, 1, 2].map(() => {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: GL.glowTex, color: 0xff7a2a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+    sp.position.set(rand(-22, 8), rand(10, 15), rand(-9, 9)); sp.visible = false; tilt.add(sp); return sp;
+  });
   const mounts = vis.mounts.map(m => {
     const pivot = new THREE.Group(); pivot.position.set(m.at[0], m.at[1], m.at[2]); tilt.add(pivot);
-    pivot.add((m.model && fitModel(m.model, m.rotY, m.scale, tint)) || placeholderPart());
+    pivot.add((m.model && fitModel(m.model, m.rotY, m.scale, tint, m.centre)) || placeholderPart());
     return { m, pivot };
   });
   const engines = vis.engines.map(p => {
@@ -1016,7 +1194,7 @@ function buildShipVis(s, isPlayer) {
     return { line, geo, pos, col, pts: [] };
   });
   GL.scene.add(root);
-  return { s, vis, root, tilt, mounts, engines, shield, trails, TN, sampleT: 0, pitch: 0, lastSpeed: 0, phase: rand(0, 6), spin: 0 };
+  return { s, vis, root, tilt, mounts, engines, shield, trails, TN, sampleT: 0, pitch: 0, lastSpeed: 0, phase: rand(0, 6), spin: 0, hullMats, fires, scorch: -1 };
 }
 function disposeShipVis(vs) {
   if (!vs) return;
@@ -1046,6 +1224,12 @@ function updateShipVis(vs, dt, t) {
   let roll = (s.bank / 0.7) * 22 * DEG + clamp(lat / 140, -0.3, 0.3) + Math.sin(t * 0.7 + vs.phase) * 2 * DEG;
   roll = clamp(roll, -25 * DEG, 25 * DEG);
   let pitch = vs.pitch + (s.pitchV || 0) + Math.sin(t * 0.55 + vs.phase * 2) * 1.2 * DEG;
+  if (s.jolt) {                                              // a heavy hit rocks the hull, then it settles
+    const j = s.jolt; j.t += dt;
+    const k = Math.exp(-j.t * 3) * Math.cos(j.t * 13);
+    roll += j.r * k; pitch += j.p * k;
+    if (j.t > 2) s.jolt = null;
+  }
   if (s.dead) {
     vs.spin += dt * 1.8; roll = vs.spin; pitch = vs.spin * 0.4;
     s.deathT = (s.deathT || 0) + dt;
@@ -1058,6 +1242,17 @@ function updateShipVis(vs, dt, t) {
     }
   }
   vs.tilt.rotation.set(roll, 0, pitch);
+  // Damage: the hull darkens and scorches, and fires flicker on it when it's in a bad way.
+  const dmg = s.dmgFx || 0;
+  if (Math.abs(dmg - vs.scorch) > 0.01) {
+    vs.scorch = dmg;
+    const burnt = new THREE.Color(0x2b1d16), k = clamp((dmg - 0.1) * 0.9, 0, 0.72);
+    vs.hullMats.forEach(h => { h.m.color.copy(h.base).lerp(burnt, k); });
+  }
+  vs.fires.forEach((f, i) => {
+    f.visible = !s.dead && dmg > 0.55 + i * 0.13;
+    if (f.visible) { const k = 13 + Math.random() * 8 + Math.sin(t * 17 + i * 3) * 3; f.scale.set(k, k, 1); f.material.opacity = 0.55 + Math.random() * 0.35; }
+  });
   vs.mounts.forEach(mt => { if (mt.m.turret) mt.pivot.rotation.y = -s.tr[mt.m.weapon]; });
   const e = eff(s, 'engines') + (s.boost || 0);
   vs.engines.forEach(sp => {
@@ -1073,10 +1268,17 @@ function updateShipVis(vs, dt, t) {
   vs.root.updateMatrixWorld(true);
   vs.sampleT += dt;
   const sample = vs.sampleT >= 1 / 30; if (sample) vs.sampleT = 0;
+  const moving = !s.dead && Math.hypot(s.vx || 0, s.vy || 0) > 25;   // no trail while sitting still (on the pad, lifting off)
   const [r, g, b] = vs.vis.trail, wp = new THREE.Vector3();
+  if (s.trailReset) { s.trailReset = false; vs.trails.forEach(tr => { tr.pts.length = 0; }); }
   vs.trails.forEach((tr, k) => {
-    if (sample && !s.dead) { vs.engines[k].getWorldPosition(wp); tr.pts.push(wp.x, wp.y, wp.z); if (tr.pts.length > vs.TN * 3) tr.pts.splice(0, 3); }
-    else if (sample && s.dead && tr.pts.length) tr.pts.splice(0, 3);
+    if (sample && moving) {
+      vs.engines[k].getWorldPosition(wp);
+      const L = tr.pts.length;
+      if (L && Math.hypot(wp.x - tr.pts[L - 3], wp.z - tr.pts[L - 1]) > 120) tr.pts.length = 0;   // the ship was moved (new scene): start afresh
+      tr.pts.push(wp.x, wp.y, wp.z); if (tr.pts.length > vs.TN * 3) tr.pts.splice(0, 3);
+    }
+    else if (sample && tr.pts.length) tr.pts.splice(0, 3);
     const n = tr.pts.length / 3;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * (0.18 + e * 0.09);
@@ -1237,8 +1439,9 @@ function buildTunnel() {
       'float h(float n){ return fract(sin(n) * 43758.5453); }',
       'void main(){',
       '  float lane = floor(vUv.x * 64.0);',
-      '  float s = fract(vUv.y * (6.0 + h(lane) * 10.0) + time * (1.2 + h(lane + 7.0) * 1.8) + h(lane + 3.0));',
-      '  float streak = smoothstep(0.0, 0.02, s) * (1.0 - smoothstep(0.02, 0.35, s));',
+      // uv.y runs from the nose (0) to the tail (1); subtracting time makes the streaks rush back past the ship
+      '  float s = fract(vUv.y * (6.0 + h(lane) * 10.0) - time * (1.2 + h(lane + 7.0) * 1.8) + h(lane + 3.0));',
+      '  float streak = smoothstep(0.65, 0.98, s) * (1.0 - smoothstep(0.98, 1.0, s));',      // bright head leads, tail trails toward the nose
       '  vec3 col = mix(vec3(0.45, 0.35, 1.0), vec3(0.3, 0.85, 1.0), h(lane + 11.0));',
       '  float ends = smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.7, vUv.y);',
       '  float a = (streak * 0.9 + 0.06) * ends * opacity;',
@@ -1301,15 +1504,35 @@ function updateShotVis() {
     }
   }
 }
+const PCOL = {};
+const pcol = c => PCOL[c] || (PCOL[c] = new THREE.Color(c));
+let FIRE_A, FIRE_B, FIRE_C, tmpC;
 function updateParticleVis() {
-  const n = Math.min(parts.length, GL.PCAP), start = parts.length - n;
-  for (let i = 0; i < n; i++) {
-    const q = parts[start + i], c = colorOf(q.color), a = Math.max(0, q.life / q.max);
-    GL.pPos[i * 3] = q.x; GL.pPos[i * 3 + 1] = SHOT_Y + (q.h || 0); GL.pPos[i * 3 + 2] = q.y;
-    GL.pCol[i * 3] = c.r * a; GL.pCol[i * 3 + 1] = c.g * a; GL.pCol[i * 3 + 2] = c.b * a;
+  if (!tmpC) { FIRE_A = pcol('#fff0b8'); FIRE_B = pcol('#ff6a1e'); FIRE_C = pcol('#5a1a0a'); tmpC = new THREE.Color(); }
+  const A = GL.psAdd, D = GL.psDark;
+  A.n = 0; D.n = 0;
+  const scale = (H * DPR) / (2 * Math.tan(GL.camera.fov * DEG / 2));
+  A.mat.uniforms.scale.value = D.mat.uniforms.scale.value = scale;
+  for (let i = parts.length - 1; i >= 0; i--) {            // newest first, so the cap drops the oldest
+    const q = parts[i], f = Math.max(0, q.life / q.max), age = q.max - q.life;
+    const k = q.k || 'glow', dark = k === 'smoke' || k === 'debris', S = dark ? D : A;
+    if (S.n >= S.cap) continue;
+    let c = pcol(q.color), a = f, hard = 0;
+    if (k === 'spark') a = Math.pow(f, 0.6) * 1.4;
+    else if (k === 'ember') a = f * (0.55 + 0.45 * Math.sin(age * 22 + i));
+    else if (k === 'fire') { const u = 1 - f; c = u < 0.4 ? tmpC.copy(FIRE_A).lerp(FIRE_B, u / 0.4) : tmpC.copy(FIRE_B).lerp(FIRE_C, (u - 0.4) / 0.6); a = Math.min(1, f * 1.6) * 0.9; }
+    else if (k === 'smoke') a = Math.min(1, age / 0.18) * Math.pow(f, 0.8) * 0.7;
+    else if (k === 'debris') { a = Math.min(1, f * 3); hard = 1; }
+    const j = S.n++;
+    S.pos[j * 3] = q.x; S.pos[j * 3 + 1] = SHOT_Y + (q.h || 0); S.pos[j * 3 + 2] = q.y;
+    S.rgba[j * 4] = c.r; S.rgba[j * 4 + 1] = c.g; S.rgba[j * 4 + 2] = c.b; S.rgba[j * 4 + 3] = a;
+    S.size[j] = q.size || 4; S.hard[j] = hard;
   }
-  GL.pGeo.attributes.position.needsUpdate = true; GL.pGeo.attributes.color.needsUpdate = true;
-  GL.pGeo.setDrawRange(0, n);
+  [A, D].forEach(S => {
+    const at = S.geo.attributes;
+    at.position.needsUpdate = at.rgba.needsUpdate = at.size.needsUpdate = at.hard.needsUpdate = true;
+    S.geo.setDrawRange(0, S.n);
+  });
 }
 
 // ---------- Camera ----------
@@ -1444,12 +1667,17 @@ function crewEvent(ev) {
         : pick(["They're spinning up a rail cannon. Their shields are thinning.", "Big power draw over there. Rail shot coming."]), { prio: 3 });
       if (weaponOnline(P, big)) sayLater(1.2, 'wpn', `Their shields are thinning. ${N} is interested.`, { prio: 2 });
       break;
+    case 'enemyLock':
+      say('comms', pick(["They're locking on! Keep moving!", "Lock warning! Bertha's cousin is looking at us."]), { prio: 3, key: 'eLock', cd: 12 });
+      if (P.target.engines < 4) sayLater(1, 'pilot', "Give me engines and I'll keep us out of that lock.", { prio: 3, key: 'pLock', cd: 25 });
+      break;
     case 'inBigLaunch':
       say('comms', eTorp ? pick(["Torpedo away! Incoming!", "Torpedo! Torpedo! That's the one!"]) : pick(["Rail shot!", "They fired the big one!"]), { prio: 4, dur: 4 });
       sayLater(5, 'comms', "They're putting it all back into shields. Window's closing.", { prio: 2, key: 'recover', cd: 20 });
       break;
     case 'inBigEvaded':
-      say('pilot', pick(["Hmm hmm hmm... dodged.", "Not today.", "Missed by a mile. Well, a metre."]), { prio: 3, key: 'pEv', cd: 4 });
+      say('pilot', eTorp ? pick(["Torpedo's out of puff. Hmm hmm hmm.", "Ran it dry. Bye bye, torpedo.", "Outran it! Did everyone see that?"])
+        : pick(["Hmm hmm hmm... dodged.", "Not today.", "Missed by a mile. Well, a metre."]), { prio: 3, key: 'pEv', cd: 4 });
       sayLater(0.8, 'comms', "Missed us! Ha!", { prio: 2, key: 'cEv', cd: 4 });
       break;
     case 'inBigHit':
@@ -1531,7 +1759,8 @@ function crewPoll() {
   if (E.hull < E.def.hullMax * 0.3 && !E.dead) say('comms', pick(["They're smoking. Keep it up!", `The ${E.def.name}'s on fire. In space. Somehow.`]), { key: 'eLow', cd: 60, prio: 2 });
 
   // Pilot: engines
-  if (threat && T.engines < 3) say('pilot', eTorp ? "Torpedo coming. Engines would be lovely, no pressure." : "Rail's about to fire. A bit more engine and I'll make us hard to hit.", { key: 'pThreat', cd: 18, prio: 3 });
+  if (inbound && (eff(P, 'engines') * 16 + 55) * 1.15 < bigGun(E).speed) say('pilot', "It's gaining on us! More engine and I can outrun it.", { key: 'pOutrun', cd: 10, prio: 4 });
+  else if (threat && T.engines < 3) say('pilot', eTorp ? "Torpedo coming. Engines would be lovely, no pressure." : "Rail's about to fire. A bit more engine and I'll make us hard to hit.", { key: 'pThreat', cd: 18, prio: 3 });
   if (weaponOnline(P, big) && P.wt[1] >= big.interval && !inArc(P, big, 1, E) && eff(P, 'engines') < 1.8) say('pilot', `I can't line up ${N} on these engines.`, { key: 'pLine', cd: 30 });
   if (T.engines > P.def.parts.engines.cap) say('pilot', `The drive tops out at ${P.def.parts.engines.cap}. You're just making it warm.`, { key: 'engCap', cd: 25 });
   if (P.spool >= 100 && !P.jumping) say('pilot', "Jump drive's warm, Captain. Say the word.", { key: 'jumpReady', cd: 90, prio: 2 });
@@ -1616,6 +1845,7 @@ function intentText() {
     const pct = E.wt[1] / w.interval;
     if (!weaponOnline(E, w)) return [`Powering ${label.toLowerCase()}`, 'threat'];
     if (P.mods.scan !== 'full') return [pct < 1 ? `${label} charging` : `${label} ready`, 'threat'];
+    if (pct >= 1 && w.kind === 'torpedo' && E.lock[1] > 0) return [`${label} locking ${Math.floor(E.lock[1] * 100)}%`, 'threat'];
     return [pct < 1 ? `${label} ${Math.floor(pct * 100)}%` : `${label} armed`, 'threat'];
   }
   if (E.down) return ['Shields down', 'open'];
@@ -1653,14 +1883,15 @@ function placeLock(el, attacker, target, color) {
   if (!show) return;
   const c = screenOf(target.x, target.y, 8), e1 = screenOf(target.x + 46, target.y, 8);
   const size = clamp(Math.hypot(e1.x - c.x, e1.y - c.y) * 2.2, 44, 150);
-  const ready = attacker.wt[1] >= w.interval, locked = ready && inArc(attacker, w, 1, target) && clearShot(attacker, target) && inRange();
+  const ready = attacker.wt[1] >= w.interval, lk = attacker.lock[1], locked = ready && lk > 0;
   el.style.transform = `translate(${c.x - size / 2}px, ${c.y - size / 2}px)`;
   el.style.width = el.style.height = size + 'px';
   el.style.setProperty('--c', color);
   el.classList.toggle('locked', locked);
   const lbl = el.querySelector('span');
-  lbl.textContent = locked ? 'LOCKED' : ready ? 'ACQUIRING' : `${Math.floor(attacker.wt[1] / w.interval * 100)}%`;
-  if (locked && attacker === E) SFX.lockBeep(true);
+  lbl.textContent = locked ? `LOCK ${Math.floor(lk * 100)}%` : ready ? 'ACQUIRING' : `${Math.floor(attacker.wt[1] / w.interval * 100)}%`;
+  el.style.setProperty('--lk', locked ? lk.toFixed(3) : 0);
+  if (locked && attacker === E) SFX.lockBeep(lk > 0.7);
 }
 function placeArrow() {
   const a = $('arrow');
@@ -1945,7 +2176,7 @@ const SCENES = {
   warp: {
     enter(o) {
       this.escape = !!(o && o.escape); this.dest = o && o.dest; this.leaving = -1;
-      P.manual = true; P.warp = 0; P.hidden = false; P.blown = false; P.h = 20; P.speed = 0; P.slipX = P.slipY = 0; P.pitchV = 0; P.boost = 2;
+      P.manual = true; P.warp = 0; P.hidden = false; P.blown = false; P.trailReset = true; P.h = 20; P.speed = 0; P.slipX = P.slipY = 0; P.pitchV = 0; P.boost = 2;
       E.hidden = true; state = 'idle'; hud(false); crewLive = false; clearChatter();
       shots.forEach(p => disposeShot(p)); shots = [];
       setStage({}); cam.rate = 4; cam.off = this.escape && portrait() ? 0.2 : 0;
@@ -1966,8 +2197,10 @@ const SCENES = {
       }
     },
     pose(pos, look) {
-      const k = portrait() ? 1.4 : 1;
-      pos.set(P.x - 150 * k, P.h + 44 * k, P.y + 56 * k); look.set(P.x + 140, P.h + 4, P.y);
+      // Chase view from behind and a little to the side, built from the ship's heading so it's always in shot.
+      const pt = portrait(), k = pt ? 1.7 : 1, side = pt ? 14 : 48, fx = Math.cos(P.ang), fz = Math.sin(P.ang);
+      pos.set(P.x - fx * 150 * k - fz * side * k, P.h + 40 * k, P.y - fz * 150 * k + fx * side * k);
+      look.set(P.x + fx * 40, P.h + 4, P.y + fz * 40);
     }
   },
 
@@ -2068,6 +2301,7 @@ function go(name, o) {
   // Jumps between places (menu to hangar, towed home, docking) cut rather than glide across the map.
   const cut = (name === 'shipsel' && prev === 'menu') || (name === 'hangar' && prev !== 'shipsel' && prev !== 'crewsel') || name === 'dock' || (name === 'menu' && prev !== 'loading');
   if (cut) { if (prev !== 'towed' && name !== 'dock') flash('#000'); snapCam(); }
+  if (name === 'warp') snapCam();                         // straight into the chase view, so the camera never swings through the hull
 }
 
 // ---------- Menus ----------

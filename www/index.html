@@ -76,7 +76,7 @@ button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .lock::after{inset:-8px;opacity:.25;animation:lockspin 2.4s linear infinite}
 .lock span{position:absolute;left:50%;top:100%;transform:translate(-50%,4px);font:700 10px/1 var(--f-display);letter-spacing:.16em;color:var(--c);text-shadow:var(--shadow);white-space:nowrap}
 .lock.locked::before{opacity:1;animation:lockpulse .5s ease-in-out infinite alternate}
-.lock.locked::after{inset:-3px;opacity:.6;animation:none}
+.lock.locked::after{inset:calc(-16px + var(--lk,0) * 13px);opacity:.65;animation:none;transition:inset .12s linear}
 @keyframes lockspin{to{transform:rotate(90deg)}}
 @keyframes lockpulse{from{transform:scale(1)}to{transform:scale(.9)}}
 

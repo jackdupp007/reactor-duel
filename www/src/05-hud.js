@@ -72,12 +72,17 @@ function crewEvent(ev) {
         : pick(["They're spinning up a rail cannon. Their shields are thinning.", "Big power draw over there. Rail shot coming."]), { prio: 3 });
       if (weaponOnline(P, big)) sayLater(1.2, 'wpn', `Their shields are thinning. ${N} is interested.`, { prio: 2 });
       break;
+    case 'enemyLock':
+      say('comms', pick(["They're locking on! Keep moving!", "Lock warning! Bertha's cousin is looking at us."]), { prio: 3, key: 'eLock', cd: 12 });
+      if (P.target.engines < 4) sayLater(1, 'pilot', "Give me engines and I'll keep us out of that lock.", { prio: 3, key: 'pLock', cd: 25 });
+      break;
     case 'inBigLaunch':
       say('comms', eTorp ? pick(["Torpedo away! Incoming!", "Torpedo! Torpedo! That's the one!"]) : pick(["Rail shot!", "They fired the big one!"]), { prio: 4, dur: 4 });
       sayLater(5, 'comms', "They're putting it all back into shields. Window's closing.", { prio: 2, key: 'recover', cd: 20 });
       break;
     case 'inBigEvaded':
-      say('pilot', pick(["Hmm hmm hmm... dodged.", "Not today.", "Missed by a mile. Well, a metre."]), { prio: 3, key: 'pEv', cd: 4 });
+      say('pilot', eTorp ? pick(["Torpedo's out of puff. Hmm hmm hmm.", "Ran it dry. Bye bye, torpedo.", "Outran it! Did everyone see that?"])
+        : pick(["Hmm hmm hmm... dodged.", "Not today.", "Missed by a mile. Well, a metre."]), { prio: 3, key: 'pEv', cd: 4 });
       sayLater(0.8, 'comms', "Missed us! Ha!", { prio: 2, key: 'cEv', cd: 4 });
       break;
     case 'inBigHit':
@@ -159,7 +164,8 @@ function crewPoll() {
   if (E.hull < E.def.hullMax * 0.3 && !E.dead) say('comms', pick(["They're smoking. Keep it up!", `The ${E.def.name}'s on fire. In space. Somehow.`]), { key: 'eLow', cd: 60, prio: 2 });
 
   // Pilot: engines
-  if (threat && T.engines < 3) say('pilot', eTorp ? "Torpedo coming. Engines would be lovely, no pressure." : "Rail's about to fire. A bit more engine and I'll make us hard to hit.", { key: 'pThreat', cd: 18, prio: 3 });
+  if (inbound && (eff(P, 'engines') * 16 + 55) * 1.15 < bigGun(E).speed) say('pilot', "It's gaining on us! More engine and I can outrun it.", { key: 'pOutrun', cd: 10, prio: 4 });
+  else if (threat && T.engines < 3) say('pilot', eTorp ? "Torpedo coming. Engines would be lovely, no pressure." : "Rail's about to fire. A bit more engine and I'll make us hard to hit.", { key: 'pThreat', cd: 18, prio: 3 });
   if (weaponOnline(P, big) && P.wt[1] >= big.interval && !inArc(P, big, 1, E) && eff(P, 'engines') < 1.8) say('pilot', `I can't line up ${N} on these engines.`, { key: 'pLine', cd: 30 });
   if (T.engines > P.def.parts.engines.cap) say('pilot', `The drive tops out at ${P.def.parts.engines.cap}. You're just making it warm.`, { key: 'engCap', cd: 25 });
   if (P.spool >= 100 && !P.jumping) say('pilot', "Jump drive's warm, Captain. Say the word.", { key: 'jumpReady', cd: 90, prio: 2 });
@@ -244,6 +250,7 @@ function intentText() {
     const pct = E.wt[1] / w.interval;
     if (!weaponOnline(E, w)) return [`Powering ${label.toLowerCase()}`, 'threat'];
     if (P.mods.scan !== 'full') return [pct < 1 ? `${label} charging` : `${label} ready`, 'threat'];
+    if (pct >= 1 && w.kind === 'torpedo' && E.lock[1] > 0) return [`${label} locking ${Math.floor(E.lock[1] * 100)}%`, 'threat'];
     return [pct < 1 ? `${label} ${Math.floor(pct * 100)}%` : `${label} armed`, 'threat'];
   }
   if (E.down) return ['Shields down', 'open'];
@@ -281,14 +288,15 @@ function placeLock(el, attacker, target, color) {
   if (!show) return;
   const c = screenOf(target.x, target.y, 8), e1 = screenOf(target.x + 46, target.y, 8);
   const size = clamp(Math.hypot(e1.x - c.x, e1.y - c.y) * 2.2, 44, 150);
-  const ready = attacker.wt[1] >= w.interval, locked = ready && inArc(attacker, w, 1, target) && clearShot(attacker, target) && inRange();
+  const ready = attacker.wt[1] >= w.interval, lk = attacker.lock[1], locked = ready && lk > 0;
   el.style.transform = `translate(${c.x - size / 2}px, ${c.y - size / 2}px)`;
   el.style.width = el.style.height = size + 'px';
   el.style.setProperty('--c', color);
   el.classList.toggle('locked', locked);
   const lbl = el.querySelector('span');
-  lbl.textContent = locked ? 'LOCKED' : ready ? 'ACQUIRING' : `${Math.floor(attacker.wt[1] / w.interval * 100)}%`;
-  if (locked && attacker === E) SFX.lockBeep(true);
+  lbl.textContent = locked ? `LOCK ${Math.floor(lk * 100)}%` : ready ? 'ACQUIRING' : `${Math.floor(attacker.wt[1] / w.interval * 100)}%`;
+  el.style.setProperty('--lk', locked ? lk.toFixed(3) : 0);
+  if (locked && attacker === E) SFX.lockBeep(lk > 0.7);
 }
 function placeArrow() {
   const a = $('arrow');

@@ -129,7 +129,7 @@ const SCENES = {
   warp: {
     enter(o) {
       this.escape = !!(o && o.escape); this.dest = o && o.dest; this.leaving = -1;
-      P.manual = true; P.warp = 0; P.hidden = false; P.blown = false; P.h = 20; P.speed = 0; P.slipX = P.slipY = 0; P.pitchV = 0; P.boost = 2;
+      P.manual = true; P.warp = 0; P.hidden = false; P.blown = false; P.trailReset = true; P.h = 20; P.speed = 0; P.slipX = P.slipY = 0; P.pitchV = 0; P.boost = 2;
       E.hidden = true; state = 'idle'; hud(false); crewLive = false; clearChatter();
       shots.forEach(p => disposeShot(p)); shots = [];
       setStage({}); cam.rate = 4; cam.off = this.escape && portrait() ? 0.2 : 0;
@@ -150,8 +150,10 @@ const SCENES = {
       }
     },
     pose(pos, look) {
-      const k = portrait() ? 1.4 : 1;
-      pos.set(P.x - 150 * k, P.h + 44 * k, P.y + 56 * k); look.set(P.x + 140, P.h + 4, P.y);
+      // Chase view from behind and a little to the side, built from the ship's heading so it's always in shot.
+      const pt = portrait(), k = pt ? 1.7 : 1, side = pt ? 14 : 48, fx = Math.cos(P.ang), fz = Math.sin(P.ang);
+      pos.set(P.x - fx * 150 * k - fz * side * k, P.h + 40 * k, P.y - fz * 150 * k + fx * side * k);
+      look.set(P.x + fx * 40, P.h + 4, P.y + fz * 40);
     }
   },
 
@@ -252,6 +254,7 @@ function go(name, o) {
   // Jumps between places (menu to hangar, towed home, docking) cut rather than glide across the map.
   const cut = (name === 'shipsel' && prev === 'menu') || (name === 'hangar' && prev !== 'shipsel' && prev !== 'crewsel') || name === 'dock' || (name === 'menu' && prev !== 'loading');
   if (cut) { if (prev !== 'towed' && name !== 'dock') flash('#000'); snapCam(); }
+  if (name === 'warp') snapCam();                         // straight into the chase view, so the camera never swings through the hull
 }
 
 // ---------- Menus ----------
