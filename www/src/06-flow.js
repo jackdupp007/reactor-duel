@@ -37,10 +37,12 @@ function sideShift(pos, look, amt) {
   const dir = look.clone().sub(pos).normalize(), right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
   pos.addScaledVector(right, amt); look.addScaledVector(right, amt);
 }
+// Parked on the pad: a still, raised three-quarter view from in front of the nose, with the station behind the ship.
+const HANGAR_ANG = 0.08;                                   // parked nose-out, seen three-quarters from the front
 const hangarPose = (pos, look) => {
-  const k = portrait() ? 1.9 : 1;
-  pos.set(P.x + 95 * k, 30 * k + 6, P.y + 130 * k); look.set(P.x, 8, P.y);
-  if (!portrait()) sideShift(pos, look, 42);
+  const k = portrait() ? 1.75 : 1;
+  pos.set(P.x + 150 * k, 38 * k + 8, P.y + 78 * k); look.set(P.x - 30, 24, P.y - 12);
+  if (!portrait()) sideShift(pos, look, 46);
 };
 
 const SCENES = {
@@ -68,12 +70,12 @@ const SCENES = {
 
   shipsel: {
     enter() { puppet(run.ship, PAD.x, PAD.y); setStage({ station: true }); hud(false); state = 'idle'; cam.rate = 2; cam.off = portrait() ? 0.2 : 0; renderShipSel(); },
-    update(dt) { P.ang += dt * 0.3; },
+    update() { P.ang = HANGAR_ANG; },
     pose: hangarPose
   },
   crewsel: {
     enter() { cam.off = portrait() ? 0.26 : 0; renderCrewSel(); },
-    update(dt) { P.ang += dt * 0.3; },
+    update() { P.ang = HANGAR_ANG; },
     pose: hangarPose
   },
   hangar: {
@@ -81,18 +83,19 @@ const SCENES = {
       puppet(run.ship, PAD.x, PAD.y); setStage({ station: true }); hud(false); state = 'idle';
       cam.rate = 2; cam.off = portrait() ? 0.2 : 0; renderHangar(o && o.note);
     },
-    update(dt) { P.ang += dt * 0.3; },
+    update() { P.ang = HANGAR_ANG; },
     pose: hangarPose
   },
 
   // Take-off, side view: lift off the pad, nose up a touch, then away.
   takeoff: {
     enter() {
-      puppet(run.ship, PAD.x, PAD.y); P.ang = 0; P.boost = 0; setStage({ station: true }); hud(false);
+      puppet(run.ship, PAD.x, PAD.y); P.ang = HANGAR_ANG; P.boost = 0; setStage({ station: true }); hud(false);
       cam.rate = 2.2; cam.off = 0; SFX.thrust(5);
     },
     update(dt) {
       const t = sceneT;
+      P.ang = HANGAR_ANG * (1 - ease(clamp((t - 0.8) / 1.6, 0, 1)));   // swing the nose out to open space while lifting
       P.boost = clamp(t / 0.8, 0, 1) * 3;
       if (t > 0.6 && t < 2.4) { const k = ease(clamp((t - 0.6) / 1.8, 0, 1)); P.h = 0.6 + k * 55; P.pitchV = -0.07 * Math.sin(k * Math.PI); }
       if (t > 2.2) { P.speed = Math.min(460, P.speed + dt * 260); P.pitchV = 0.04 * clamp((t - 2.2) / 0.5, 0, 1); }
@@ -224,9 +227,11 @@ const SCENES = {
       const k = ease(clamp(sceneT / 4, 0, 1));
       P.x = PAD.x - 460 * (1 - k); P.h = 0.6 + 150 * Math.pow(1 - k, 1.6); P.pitchV = 0.06 * (1 - k);
       P.boost = 2 * (1 - k); P.speed = 0;
-      if (sceneT > 4.6) { run.hull = SHIPS[run.ship].hullMax; go('hangar', { note: 'Repairs complete. The ship is good as new.' }); }
+      if (sceneT > 4) { P.ang = HANGAR_ANG * ease(clamp((sceneT - 4) / 1.6, 0, 1)); cam.rate = 1.3; }   // settle into parking position
+      if (sceneT > 6.6) { run.hull = SHIPS[run.ship].hullMax; go('hangar', { note: 'Repairs complete. The ship is good as new.' }); }
     },
     pose(pos, look) {
+      if (sceneT > 4) return hangarPose(pos, look);           // touched down: pan round to the front of the ship
       const d = portrait() ? 560 : 320;
       pos.set(PAD.x + 80, 70, PAD.y + d); look.set(P.x * 0.6 + PAD.x * 0.4, P.h * 0.7 + 10, P.y);
     }
@@ -252,7 +257,7 @@ function go(name, o) {
   if (name === 'battle' || name === 'clear') hud(true);
   if (SCENES[name].enter) SCENES[name].enter.call(SCENES[name], o || {}, prev);
   // Jumps between places (menu to hangar, towed home, docking) cut rather than glide across the map.
-  const cut = (name === 'shipsel' && prev === 'menu') || (name === 'hangar' && prev !== 'shipsel' && prev !== 'crewsel') || name === 'dock' || (name === 'menu' && prev !== 'loading');
+  const cut = (name === 'shipsel' && prev === 'menu') || (name === 'hangar' && !['shipsel', 'crewsel', 'dock'].includes(prev)) || name === 'dock' || (name === 'menu' && prev !== 'loading');
   if (cut) { if (prev !== 'towed' && name !== 'dock') flash('#000'); snapCam(); }
   if (name === 'warp') snapCam();                         // straight into the chase view, so the camera never swings through the hull
 }
