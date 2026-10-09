@@ -7,13 +7,14 @@
 <title>Reactor Duel</title>
 <link rel="stylesheet" href="fonts/fonts.css">
 <style>
-/* Layout: battle canvas full-bleed. Top = read-only ship stats, no boxes. Bottom = crew chatter bubbles rising above the
-   console, then every control. Deliberately single dark theme (cockpit display). */
+/* Layout: the 3D view fills the screen and never cuts away. Menus float over it. In battle: read-only ship stats at the top,
+   crew chatter above the consoles, and two swipeable consoles at the bottom (reactor slides off left, orders off right).
+   Deliberately single dark theme (cockpit display). */
 :root{
   color-scheme: dark;
   --void:#05070c;
-  --panel:rgba(8,12,20,.5);
-  --panel-solid:#0b111b;
+  --panel:rgba(8,12,20,.55);
+  --panel-solid:rgba(11,17,27,.92);
   --line:rgba(140,175,210,.16);
   --ink:#dbe5ee;
   --dim:#8a9bb0;
@@ -27,21 +28,28 @@
   --f-body:"Saira",system-ui,sans-serif;
   --f-data:"IBM Plex Mono",ui-monospace,Menlo,monospace;
   --shadow:0 1px 2px rgba(0,0,0,.9),0 0 8px rgba(0,0,0,.6);
+  --safe-b:env(safe-area-inset-bottom,0px);
 }
 [hidden]{display:none!important}
 html,body{height:100%}
 body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);overflow:hidden;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
 #game{position:fixed;inset:0;width:100%;height:100%;display:block}
+button{font:inherit;color:inherit}
+.btn{pointer-events:auto;font:600 13px/1 var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--ink);background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:7px;padding:10px 14px;cursor:pointer;min-height:44px}
+.btn:hover{background:rgba(255,255,255,.12)}
+.btn.primary{border-color:var(--ink);background:rgba(255,255,255,.12)}
+.btn:disabled{opacity:.4;cursor:default}
+button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 
-.hud{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between;gap:8px;
-  padding:calc(10px + env(safe-area-inset-top,0px)) calc(14px + env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) calc(14px + env(safe-area-inset-left,0px))}
-
-/* ---- top: read only, no boxes ---- */
-.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;text-shadow:var(--shadow)}
+/* ================= battle HUD ================= */
+#hud{position:fixed;inset:0;pointer-events:none;opacity:0;transition:opacity .4s}
+#hud.on{opacity:1}
+#hud:not(.on) *{pointer-events:none!important}
+.top{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;text-shadow:var(--shadow);
+  padding:calc(10px + env(safe-area-inset-top,0px)) calc(14px + env(safe-area-inset-right,0px)) 0 calc(14px + env(safe-area-inset-left,0px))}
 .ship{width:min(210px,44vw);display:grid;gap:9px;min-width:0}
 .ship.foe{text-align:right}
-.ship h2{margin:0;font-family:var(--f-display);font-weight:700;font-size:12px;letter-spacing:.18em;text-transform:uppercase;display:flex;gap:8px;align-items:baseline;position:relative}
-.ship.foe h2{justify-content:flex-end}
+.ship h2{margin:0;font-family:var(--f-display);font-weight:700;font-size:12px;letter-spacing:.18em;text-transform:uppercase;position:relative}
 .bar{position:relative;display:grid;grid-template-columns:40px 1fr 30px;align-items:center;gap:6px;font-size:10px}
 .bar label{font-family:var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);text-align:left}
 .bar .track{height:4px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.35)}
@@ -53,123 +61,203 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
 .scan i{display:block;height:3px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden}
 .scan i em{display:block;height:100%;background:var(--c);width:0}
 .intent{font-family:var(--f-display);font-weight:600;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-top:-4px}
-.intent.threat{color:var(--danger)}
-.intent.open{color:var(--comms)}
-
-/* damage ticks: drop in under the stat they hit, then fade */
+.intent.threat{color:var(--danger)} .intent.open{color:var(--comms)}
 .tick{position:absolute;right:0;top:100%;margin-top:1px;font:500 10px/1 var(--f-data);font-variant-numeric:tabular-nums;color:var(--c);pointer-events:none;animation:tick 1.4s ease-out forwards}
 .ship h2 .tick{top:auto;bottom:-11px;right:auto;left:0;font-family:var(--f-display);letter-spacing:.12em;color:var(--engine)}
 .ship.foe h2 .tick{left:auto;right:0}
 .bar.hullbar .tick{color:#ffb4a8}
 @keyframes tick{0%{opacity:0;transform:translateY(-3px)}12%{opacity:1;transform:none}70%{opacity:1}100%{opacity:0;transform:translateY(3px)}}
 
-.mid{flex:1;display:flex;align-items:center;justify-content:center;pointer-events:none}
-#nudge{font-family:var(--f-display);letter-spacing:.1em;text-transform:uppercase;font-size:12px;padding:5px 10px;border-radius:4px;background:var(--panel);border:1px solid var(--line);opacity:0;transition:opacity .25s;text-shadow:none}
-#nudge.on{opacity:1}
-#log{display:none}
+/* lock-on box: four corner brackets around the target */
+.lock{position:absolute;left:0;top:0;--c:var(--danger);pointer-events:none;will-change:transform}
+.lock::before,.lock::after{content:"";position:absolute;inset:0;border:2px solid var(--c);opacity:.8;
+  -webkit-mask:linear-gradient(#000 0 0) top left/30% 30% no-repeat,linear-gradient(#000 0 0) top right/30% 30% no-repeat,linear-gradient(#000 0 0) bottom left/30% 30% no-repeat,linear-gradient(#000 0 0) bottom right/30% 30% no-repeat;
+          mask:linear-gradient(#000 0 0) top left/30% 30% no-repeat,linear-gradient(#000 0 0) top right/30% 30% no-repeat,linear-gradient(#000 0 0) bottom left/30% 30% no-repeat,linear-gradient(#000 0 0) bottom right/30% 30% no-repeat}
+.lock::after{inset:-8px;opacity:.25;animation:lockspin 2.4s linear infinite}
+.lock span{position:absolute;left:50%;top:100%;transform:translate(-50%,4px);font:700 10px/1 var(--f-display);letter-spacing:.16em;color:var(--c);text-shadow:var(--shadow);white-space:nowrap}
+.lock.locked::before{opacity:1;animation:lockpulse .5s ease-in-out infinite alternate}
+.lock.locked::after{inset:-3px;opacity:.6;animation:none}
+@keyframes lockspin{to{transform:rotate(90deg)}}
+@keyframes lockpulse{from{transform:scale(1)}to{transform:scale(.9)}}
 
-/* ---- bottom: chatter bubbles, then every control ---- */
-.bottom{display:grid;justify-items:center;gap:6px}
-.chatter{width:min(860px,100%);height:150px;display:flex;flex-direction:column;justify-content:flex-end;align-items:flex-start;gap:5px;overflow:hidden;pointer-events:none;
-  -webkit-mask-image:linear-gradient(to top,#000 40%,transparent 100%);mask-image:linear-gradient(to top,#000 40%,transparent 100%)}
-.bub{--c:var(--ink);display:flex;gap:7px;align-items:flex-start;max-width:min(100%,460px);padding:5px 11px 6px 6px;border-radius:13px 13px 13px 4px;
-  background:rgba(8,12,20,.55);border:1px solid rgba(255,255,255,.08);font-size:12.5px;line-height:1.3;color:var(--ink);
-  animation:bub-in .3s ease-out both,bub-out 1.8s ease-in var(--life,5s) forwards}
+/* off-screen enemy arrow */
+#arrow{position:absolute;left:0;top:0;width:36px;height:36px;display:grid;place-items:center;pointer-events:none}
+#arrow i{position:absolute;inset:0;display:block}
+#arrow i::before{content:"";position:absolute;right:0;top:50%;margin-top:-7px;border:7px solid transparent;border-left:12px solid var(--danger);filter:drop-shadow(0 0 4px rgba(0,0,0,.8))}
+#arrow span{font:600 10px/1 var(--f-data);color:var(--danger);text-shadow:var(--shadow)}
+
+#nudge{position:absolute;left:50%;top:42%;transform:translateX(-50%);font-family:var(--f-display);letter-spacing:.1em;text-transform:uppercase;font-size:12px;padding:5px 10px;border-radius:4px;background:var(--panel);border:1px solid var(--line);opacity:0;transition:opacity .25s;white-space:nowrap}
+#nudge.on{opacity:1}
+
+/* crew chatter: bubbles stacked by script, rising and fading */
+.chatter{position:absolute;left:calc(12px + env(safe-area-inset-left,0px));width:min(500px,calc(100% - 24px));height:150px;pointer-events:none;overflow:hidden;transition:bottom .35s ease;
+  -webkit-mask-image:linear-gradient(to top,#000 50%,transparent 100%);mask-image:linear-gradient(to top,#000 50%,transparent 100%)}
+.bub{position:absolute;left:0;bottom:0;--c:var(--ink);display:flex;gap:7px;align-items:flex-start;max-width:100%;box-sizing:border-box;padding:5px 11px 6px 6px;border-radius:13px 13px 13px 4px;
+  background:rgba(8,12,20,.6);border:1px solid rgba(255,255,255,.08);font-size:12.5px;line-height:1.3;
+  transition:transform .4s cubic-bezier(.2,.8,.2,1),opacity 1.2s ease;animation:bub-in .3s ease-out}
 .bub .f{flex:none;width:18px;height:18px;border-radius:50%;border:1.5px solid var(--c);color:var(--c);font:700 10px/15px var(--f-display);text-align:center}
 .bub b{color:var(--c);font:700 11px/1.3 var(--f-display);letter-spacing:.1em;text-transform:uppercase;margin-right:5px}
-.bub.urgent{background:rgba(42,10,18,.6);border-color:rgba(255,84,104,.45)}
-@keyframes bub-in{from{opacity:0;max-height:0;transform:translateY(10px) scale(.96)}to{opacity:1;max-height:90px}}
-@keyframes bub-out{to{opacity:0;transform:translateY(-16px)}}
+.bub.urgent{background:rgba(42,10,18,.66);border-color:rgba(255,84,104,.45)}
+.bub.old{opacity:0}
+@keyframes bub-in{from{opacity:0;scale:.94}to{opacity:1;scale:1}}
 
-.console{pointer-events:auto;width:min(860px,100%);display:grid;gap:6px;padding:7px 9px;background:var(--panel);border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
-.orders{display:flex;align-items:stretch;gap:7px}
-.reactor{align-self:center;font-family:var(--f-data);font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.35}
-.reactor b{color:var(--ink);font-weight:500}
-.reactor.flash b{color:var(--danger)}
-.order-list{flex:1;display:flex;gap:7px;min-width:0}
-.btn{pointer-events:auto;font:600 12px/1 var(--f-display);letter-spacing:.12em;text-transform:uppercase;color:var(--ink);background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:6px;padding:8px 11px;cursor:pointer;min-height:40px}
-.btn:hover{background:rgba(255,255,255,.1)}
-.btn:focus-visible,.pw:focus-visible,.order:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-.order{position:relative;flex:1;min-width:0;min-height:40px;overflow:hidden;border-radius:6px;border:1px solid var(--line);color:var(--dim);cursor:pointer;
-  background:linear-gradient(90deg, rgba(180,140,255,.16) calc(var(--p,0) * 100%), rgba(255,255,255,.03) 0);
-  display:grid;align-content:center;justify-items:start;gap:2px;padding:5px 11px;text-align:left;touch-action:none}
-.order::after{content:"";position:absolute;inset:0;background:rgba(180,140,255,.45);transform:scaleX(var(--h,0));transform-origin:left;pointer-events:none}
-.order .lab{position:relative;z-index:1;font:700 12px/1.1 var(--f-display);letter-spacing:.1em;text-transform:uppercase}
-.order .hint{position:relative;z-index:1;font:400 10px/1.2 var(--f-data);color:var(--dim)}
-.order.ready{border-color:var(--engine);color:var(--ink);box-shadow:0 0 14px rgba(180,140,255,.3)}
-.order.ready .lab{color:var(--engine)}
-
+/* consoles */
+.console{position:absolute;left:calc(10px + env(safe-area-inset-left,0px));right:calc(10px + env(safe-area-inset-right,0px));margin:0 auto;pointer-events:auto;
+  padding:7px 9px;background:var(--panel);border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+  transition:transform .35s cubic-bezier(.2,.8,.2,1),bottom .35s ease;touch-action:pan-y}
+#con-reactor{max-width:860px;display:grid;gap:5px;margin-bottom:var(--safe-b)}
+#con-orders{max-width:560px;display:flex;gap:7px;align-items:stretch;margin-bottom:var(--safe-b)}
+.con-head{display:flex;align-items:center;gap:8px;font:600 11px/1 var(--f-display);letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.con-head .free{font-family:var(--f-data);letter-spacing:0;text-transform:none}
+.con-head .free b{color:var(--ink);font-weight:500}
+.con-head .free.flash b{color:var(--danger)}
+.con-head .grip{margin-left:auto;font-size:10px;letter-spacing:.1em;opacity:.7}
+.iconbtn{pointer-events:auto;min-width:34px;height:26px;border-radius:6px;border:1px solid var(--line);background:rgba(255,255,255,.06);font:700 11px/1 var(--f-display);letter-spacing:.06em;cursor:pointer;color:var(--ink)}
 .systems{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
 .sys{display:grid;gap:3px;min-width:0}
-.sys[data-sys="shields"]{--c:var(--shield)}
-.sys[data-sys="weapons"]{--c:var(--weapon)}
-.sys[data-sys="engines"]{--c:var(--engine)}
+.sys[data-sys="shields"]{--c:var(--shield)} .sys[data-sys="weapons"]{--c:var(--weapon)} .sys[data-sys="engines"]{--c:var(--engine)}
 .sys-head{display:flex;align-items:baseline;gap:7px;min-width:0}
 .sys-name{font-family:var(--f-display);font-weight:700;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--c)}
 .crew-tag{font-family:var(--f-display);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
 .stat{margin-left:auto;font:400 10px/1.2 var(--f-data);color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.stat b{color:var(--ink);font-weight:500}
-.stat .off{color:var(--danger)}
+.stat b{color:var(--ink);font-weight:500} .stat .off{color:var(--danger)}
 .sys-row{display:grid;grid-template-columns:38px 1fr 38px;gap:5px;align-items:center}
 .pw{pointer-events:auto;height:36px;border-radius:6px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--c);font:600 19px/1 var(--f-data);cursor:pointer;touch-action:manipulation}
-.pw:hover{background:rgba(255,255,255,.1)}
-.pw:active{transform:translateY(1px)}
+.pw:hover{background:rgba(255,255,255,.1)} .pw:active{transform:translateY(1px)}
 .pips{display:flex;gap:3px;min-width:0}
 .pip{flex:1;height:18px;border:1px solid var(--line);border-radius:2px;position:relative;overflow:hidden;background:rgba(255,255,255,.025)}
 .pip::after{content:"";position:absolute;inset:0;background:var(--c);transform:scaleY(var(--f,0));transform-origin:bottom}
 .pip.tgt{border-color:var(--c)}
 .pip.over{background:repeating-linear-gradient(135deg,rgba(255,255,255,.08) 0 2px,transparent 2px 6px)}
 .pip.over::after{opacity:.35}
+.order-list{flex:1;display:flex;gap:7px;min-width:0}
+.order{position:relative;flex:1;min-width:0;min-height:44px;overflow:hidden;border-radius:7px;border:1px solid var(--line);color:var(--dim);cursor:pointer;
+  background:linear-gradient(90deg, rgba(180,140,255,.16) calc(var(--p,0) * 100%), rgba(255,255,255,.03) 0);
+  display:grid;align-content:center;justify-items:start;gap:2px;padding:5px 11px;text-align:left;touch-action:none;pointer-events:auto}
+.order::after{content:"";position:absolute;inset:0;background:rgba(180,140,255,.45);transform:scaleX(var(--h,0));transform-origin:left;pointer-events:none}
+.order .lab{position:relative;z-index:1;font:700 12px/1.1 var(--f-display);letter-spacing:.1em;text-transform:uppercase}
+.order .hint{position:relative;z-index:1;font:400 10px/1.2 var(--f-data);color:var(--dim)}
+.order.ready{border-color:var(--engine);color:var(--ink);box-shadow:0 0 14px rgba(180,140,255,.3)}
+.order.ready .lab{color:var(--engine)}
+.side-btns{display:grid;gap:5px}
+.side-btns .btn{min-height:0;padding:6px 9px;font-size:10px}
+.tab{position:absolute;pointer-events:auto;padding:10px 8px;border:1px solid var(--line);background:var(--panel);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+  font:700 10px/1 var(--f-display);letter-spacing:.16em;text-transform:uppercase;color:var(--ink);cursor:pointer;writing-mode:vertical-rl;margin-bottom:var(--safe-b)}
+#tab-reactor{left:0;border-left:0;border-radius:0 8px 8px 0;color:var(--weapon)}
+#tab-orders{right:0;border-right:0;border-radius:8px 0 0 8px;color:var(--engine)}
 
-/* ---- overlays ---- */
-.overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(3,5,9,.62);z-index:5;overflow:auto}
-.card{width:min(560px,100%);background:var(--panel-solid);border:1px solid var(--line);border-radius:10px;padding:22px;display:grid;gap:14px}
-.card .eyebrow{font-family:var(--f-display);letter-spacing:.2em;font-size:12px;color:var(--dim);text-transform:uppercase}
-.card h1{margin:0;font-family:var(--f-display);font-weight:700;font-size:clamp(34px,7vw,52px);letter-spacing:.06em;line-height:1;text-transform:uppercase;text-wrap:balance}
-.card p{margin:0;line-height:1.55;max-width:62ch}
-.card .muted{color:var(--dim)}
-.face{width:34px;height:34px;flex:none;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--c);background:rgba(255,255,255,.04);font:700 14px/1 var(--f-display);color:var(--c)}
-.crew-intro{display:grid;gap:10px;margin:0;padding:0;list-style:none}
-.crew-intro li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;font-size:13px;line-height:1.4}
-.crew-intro b{font-family:var(--f-display);letter-spacing:.1em;text-transform:uppercase;color:var(--c)}
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-.stats div{display:grid;gap:2px}
-.stats span{font-family:var(--f-display);font-size:10px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
-.stats b{font-family:var(--f-data);font-weight:500;font-size:16px}
-.go{justify-self:start;font-size:16px;padding:12px 20px;border-color:var(--ink)}
-.btn:disabled{opacity:.45;cursor:default}
-.keys{font-family:var(--f-data);font-size:11px;color:var(--dim)}
+/* ================= overlays ================= */
+.ov{position:fixed;z-index:4;pointer-events:none;display:flex}
+.ov > *{pointer-events:auto}
+.card{background:var(--panel-solid);border:1px solid var(--line);border-radius:12px;padding:20px;display:grid;gap:12px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.eyebrow{font-family:var(--f-display);letter-spacing:.22em;font-size:11px;color:var(--dim);text-transform:uppercase}
+h1,.h1{margin:0;font-family:var(--f-display);font-weight:700;letter-spacing:.06em;line-height:1;text-transform:uppercase;text-wrap:balance}
+.card p{margin:0;line-height:1.5;max-width:62ch}
+.muted{color:var(--dim)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.srow{display:grid;grid-template-columns:minmax(0,1.3fr) 1fr auto;gap:10px;align-items:center;font-size:12px}
+.srow span{color:var(--dim);font-family:var(--f-display);letter-spacing:.08em;text-transform:uppercase;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srow i{display:block;height:5px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden}
+.srow em{display:block;height:100%;background:linear-gradient(90deg,var(--shield),var(--engine))}
+.srow b{font:500 11px/1 var(--f-data);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+#loading{inset:0;align-items:center;justify-content:center;background:var(--void)}
+#loading .card{width:min(360px,calc(100% - 32px));text-align:center}
+#loading .h1{font-size:42px}
+.loadbar{height:3px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden}
+.loadbar i{display:block;height:100%;width:0;background:var(--shield);transition:width .2s}
+
+#menu{left:0;bottom:0;padding:0 0 calc(28px + var(--safe-b)) calc(28px + env(safe-area-inset-left,0px));flex-direction:column;gap:18px;max-width:min(560px,100%);box-sizing:border-box}
+#menu .h1{font-size:clamp(46px,11vw,96px);text-shadow:0 4px 30px rgba(0,0,0,.6)}
+#menu .h1 em{font-style:normal;color:var(--shield)}
+#menu p{margin:0;max-width:40ch;line-height:1.5;color:var(--ink);text-shadow:var(--shadow)}
+
+.sheet{right:0;top:0;bottom:0;width:min(440px,100%);padding:calc(14px + env(safe-area-inset-top,0px)) 14px calc(14px + var(--safe-b));box-sizing:border-box;align-items:center}
+.sheet .card{width:100%;max-height:100%;overflow:auto;box-sizing:border-box}
+#shipsel .h1{font-size:46px}
+.ship-nav{display:flex;align-items:center;gap:10px}
+.ship-nav .count{font:500 11px/1 var(--f-data);color:var(--dim)}
+.arrowbtn{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.06);font:600 18px/1 var(--f-data);cursor:pointer}
+.stats{display:grid;gap:8px}
+
+#crewsel .card{gap:10px}
+.crow{display:grid;gap:6px}
+.crow h3{margin:0;font:700 11px/1 var(--f-display);letter-spacing:.2em;text-transform:uppercase;color:var(--c)}
+.ccards{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.ccard{display:flex;gap:8px;align-items:flex-start;text-align:left;padding:8px;border-radius:9px;border:1px solid var(--line);background:rgba(255,255,255,.03);cursor:pointer;min-width:0}
+.ccard.sel{border-color:var(--c);background:rgba(255,255,255,.08);box-shadow:0 0 0 1px var(--c) inset}
+.cface{flex:none;width:30px;height:30px;border-radius:50%;border:1.5px solid var(--c);color:var(--c);display:grid;place-items:center;font:700 14px/1 var(--f-display)}
+.cbody{display:grid;gap:3px;min-width:0}
+.cbody b{font:700 13px/1.1 var(--f-display);letter-spacing:.08em;text-transform:uppercase}
+.cbody em{font-style:normal;font-size:11px;line-height:1.3;color:var(--dim)}
+.cbody .plus,.cbody .minus{font-size:11px;line-height:1.3}
+.cbody .plus::before{content:"+ ";color:var(--comms);font-weight:700}
+.cbody .minus::before{content:"− ";color:var(--danger);font-weight:700}
+
+#map{inset:0;align-items:flex-end;justify-content:center;padding:14px 14px calc(14px + var(--safe-b));box-sizing:border-box}
+#map .card{width:min(560px,100%);box-sizing:border-box}
+.mapbox{position:relative;aspect-ratio:16/10;max-width:100%;border-radius:10px;border:1px solid var(--line);
+  background:radial-gradient(circle at 30% 60%,rgba(82,200,255,.08),transparent 60%),radial-gradient(circle at 75% 30%,rgba(180,140,255,.1),transparent 55%),rgba(0,0,0,.25);overflow:hidden}
+.mapbox svg{position:absolute;inset:0;width:100%;height:100%}
+.route{stroke:rgba(140,175,210,.35);stroke-width:1;stroke-dasharray:4 4;vector-effect:non-scaling-stroke}
+.route.sel{stroke:var(--engine);stroke-width:2;stroke-dasharray:none}
+.node{position:absolute;transform:translate(-50%,-50%);display:grid;justify-items:center;gap:6px;background:none;border:0;cursor:pointer;padding:6px}
+.node i{width:18px;height:18px;border-radius:50%;border:2px solid var(--dim);background:rgba(0,0,0,.4)}
+.node.station i{border-color:var(--comms);border-radius:4px;transform:rotate(45deg)}
+.node.rock i{border-color:#d9b38c}
+.node.ice i{border-color:var(--shield)}
+.node.sel i{box-shadow:0 0 0 4px rgba(180,140,255,.35);background:var(--engine)}
+.node.here i{background:var(--comms)}
+.node span{font:700 11px/1.1 var(--f-display);letter-spacing:.1em;text-transform:uppercase;text-align:center;text-shadow:var(--shadow);white-space:nowrap}
+.node small{display:block;font:500 9px/1.3 var(--f-data);letter-spacing:0;text-transform:none;color:var(--comms)}
+.node:disabled{cursor:default}
+#map-info{display:grid;gap:3px;min-height:36px;font-size:13px}
+#map-info b{font:700 14px/1.1 var(--f-display);letter-spacing:.1em;text-transform:uppercase}
+#map-info span{color:var(--dim)}
+
+#towed{inset:0;align-items:center;justify-content:center;padding:16px}
+#towed .card{width:min(420px,100%);box-sizing:border-box}
+#towed .h1{font-size:40px}
+
+#banner{position:fixed;left:0;right:0;top:26%;z-index:3;display:grid;justify-items:center;gap:4px;pointer-events:none;opacity:0;transition:opacity .5s;text-shadow:0 2px 20px rgba(0,0,0,.8);padding:0 16px;text-align:center}
+#banner.on{opacity:1}
+#banner b{font:700 clamp(28px,7vw,54px)/1 var(--f-display);letter-spacing:.14em;text-transform:uppercase}
+#banner span{font:600 13px/1.2 var(--f-display);letter-spacing:.24em;text-transform:uppercase;color:var(--dim)}
+#flash{position:fixed;inset:0;z-index:6;pointer-events:none;opacity:0;background:#fff}
+#flash.on{animation:flash .9s ease-out}
+@keyframes flash{0%{opacity:1}100%{opacity:0}}
+#fade{position:fixed;inset:0;z-index:3;pointer-events:none;background:#000;opacity:0;transition:opacity 1.2s}
+#fade.on{opacity:1}
 
 /* ---- phone portrait ---- */
 @media (max-width:640px){
-  .hud{padding:calc(8px + env(safe-area-inset-top,0px)) 10px calc(8px + env(safe-area-inset-bottom,0px));gap:4px}
   .ship{width:calc(50vw - 18px);gap:8px}
   .ship h2{font-size:11px}
   .bar{grid-template-columns:34px 1fr 26px;gap:4px;font-size:9.5px}
-  .chatter{height:120px;gap:4px}
+  .chatter{height:126px}
   .bub{font-size:11.5px;padding:4px 9px 5px 5px}
-  .console{padding:6px 7px;gap:5px;background:rgba(8,12,20,.42)}
+  .console{padding:6px 7px;background:rgba(8,12,20,.45)}
   .systems{grid-template-columns:1fr;gap:5px}
-  .key{display:none}
-  .sys-row{grid-template-columns:38px 1fr 38px}
-  .pw{height:34px}
-  .pip{height:15px}
-  .card{padding:18px;gap:12px}
-  .stats{grid-template-columns:repeat(2,1fr)}
-  .keys{display:none}
+  .pw{height:34px} .pip{height:15px}
+  #menu{padding:0 18px calc(22px + var(--safe-b));gap:14px}
+  .sheet{top:auto;left:0;width:100%;max-height:62%;padding:0 10px calc(10px + var(--safe-b))}
+  .sheet .card{padding:14px;gap:10px}
+  #crewsel.sheet{max-height:74%}
+  #shipsel .h1{font-size:36px}
+  .ccard{padding:7px;gap:6px} .cface{width:26px;height:26px;font-size:12px}
+  .cbody em{display:none}
 }
 @media (max-height:520px) and (min-width:641px){
   .chatter{height:84px}
-  .pw{height:30px} .pip{height:13px} .btn,.order{min-height:34px}
+  .pw{height:30px} .pip{height:13px} .order{min-height:36px}
 }
-@media (prefers-reduced-motion:reduce){.bar .fill{transition:none}.bub{animation-duration:.01s,.01s}}
+@media (prefers-reduced-motion:reduce){.bar .fill,.bub,.console{transition:none}.lock::after{animation:none}}
 </style>
-
 </head>
 <body>
 <canvas id="game" aria-label="Battle view"></canvas>
 
-<div class="hud">
+<div id="hud">
   <header class="top">
     <section class="ship mine" aria-label="Your ship">
       <h2 id="p-name">Kestrel</h2>
@@ -180,7 +268,7 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
       <h2 id="e-name">Corsair</h2>
       <div class="bar hullbar" id="e-hull"><label>Hull</label><div class="track"><div class="fill"></div></div><output>140</output></div>
       <div class="bar shbar" id="e-sh"><label>Shield</label><div class="track"><div class="fill"></div></div><output>0</output></div>
-      <div class="scan" aria-label="Scanned enemy power">
+      <div class="scan" id="scan" aria-label="Scanned enemy power">
         <i style="--c:var(--shield)"><em id="eb-s"></em></i>
         <i style="--c:var(--weapon)"><em id="eb-w"></em></i>
         <i style="--c:var(--engine)"><em id="eb-e"></em></i>
@@ -189,1521 +277,114 @@ body{margin:0;background:var(--void);color:var(--ink);font-family:var(--f-body);
     </section>
   </header>
 
-  <div class="mid"><div id="nudge" role="status"></div></div>
-  <div id="log" aria-hidden="true"></div>
+  <div class="lock" id="lock-p" hidden><span></span></div>
+  <div class="lock" id="lock-e" hidden><span></span></div>
+  <div id="arrow" hidden><i></i><span></span></div>
+  <div id="nudge" role="status"></div>
+  <div class="chatter" id="chatter" aria-live="polite"></div>
 
-  <footer class="bottom">
-    <div class="chatter" id="chatter" aria-live="polite"></div>
-    <section class="console" aria-label="Captain's console">
-      <div class="orders">
-        <div class="reactor" id="reactor">Reactor <b>10</b><br>free <b id="free">0</b></div>
-        <div class="order-list" id="orders"></div>
-        <button class="btn ctl" id="pause" type="button">Pause</button>
+  <section class="console" id="con-orders" aria-label="Orders">
+    <div class="order-list" id="orders"></div>
+    <div class="side-btns"><button class="btn mute" type="button">Sound on</button></div>
+  </section>
+
+  <section class="console" id="con-reactor" aria-label="Reactor">
+    <div class="con-head">Reactor <span class="free"><b id="reactor-total">10</b> · free <b id="free">0</b></span><span class="grip">‹ swipe</span><button class="iconbtn" id="pause" type="button" aria-label="Pause">II</button></div>
+    <div class="systems">
+      <div class="sys" data-sys="shields">
+        <div class="sys-head"><span class="sys-name">Shields</span><span class="crew-tag" id="tag-shields"></span><span class="stat" id="stat-shields"></span></div>
+        <div class="sys-row"><button class="pw" id="shields-minus" data-k="shields" data-d="-1" aria-label="Less power to shields">−</button><div class="pips"></div><button class="pw" id="shields-plus" data-k="shields" data-d="1" aria-label="More power to shields">+</button></div>
       </div>
-      <div class="systems">
-        <div class="sys" data-sys="shields">
-          <div class="sys-head"><span class="sys-name">Shields</span><span class="crew-tag">Fergus</span><span class="stat" id="stat-shields"></span></div>
-          <div class="sys-row"><button class="pw" id="shields-minus" data-k="shields" data-d="-1" aria-label="Less power to shields">−</button><div class="pips"></div><button class="pw" id="shields-plus" data-k="shields" data-d="1" aria-label="More power to shields">+</button></div>
-        </div>
-        <div class="sys" data-sys="weapons">
-          <div class="sys-head"><span class="sys-name">Weapons</span><span class="crew-tag">Dot</span><span class="stat" id="stat-weapons"></span></div>
-          <div class="sys-row"><button class="pw" id="weapons-minus" data-k="weapons" data-d="-1" aria-label="Less power to weapons">−</button><div class="pips"></div><button class="pw" id="weapons-plus" data-k="weapons" data-d="1" aria-label="More power to weapons">+</button></div>
-        </div>
-        <div class="sys" data-sys="engines">
-          <div class="sys-head"><span class="sys-name">Engines</span><span class="crew-tag">Juno</span><span class="stat" id="stat-engines"></span></div>
-          <div class="sys-row"><button class="pw" id="engines-minus" data-k="engines" data-d="-1" aria-label="Less power to engines">−</button><div class="pips"></div><button class="pw" id="engines-plus" data-k="engines" data-d="1" aria-label="More power to engines">+</button></div>
-        </div>
+      <div class="sys" data-sys="weapons">
+        <div class="sys-head"><span class="sys-name">Weapons</span><span class="crew-tag" id="tag-weapons"></span><span class="stat" id="stat-weapons"></span></div>
+        <div class="sys-row"><button class="pw" id="weapons-minus" data-k="weapons" data-d="-1" aria-label="Less power to weapons">−</button><div class="pips"></div><button class="pw" id="weapons-plus" data-k="weapons" data-d="1" aria-label="More power to weapons">+</button></div>
       </div>
-    </section>
-  </footer>
-</div>
-
-<div class="overlay" id="title">
-  <div class="card">
-    <div class="eyebrow">Kestrel Lancer vs Corsair Raider</div>
-    <h1>Reactor Duel</h1>
-    <p>You're the captain, and you run the reactor. Ten units of power, three systems, and power takes time to move. Your crew will tell you what they need. Who gets it is up to you.</p>
-    <ul class="crew-intro">
-      <li style="--c:var(--comms)"><div class="face" aria-hidden="true">T</div><span><b>Tally</b>, comms. Tells you what the enemy is up to. Relays your orders.</span></li>
-      <li style="--c:var(--shield)"><div class="face" aria-hidden="true">F</div><span><b>Fergus</b>, engineer. Runs the shields and wants power for them.</span></li>
-      <li style="--c:var(--weapon)"><div class="face" aria-hidden="true">D</div><span><b>Dot</b>, weapons. Laser turret, plus a rail cannon called Doris that needs 4 power.</span></li>
-      <li style="--c:var(--engine)"><div class="face" aria-hidden="true">J</div><span><b>Juno</b>, pilot. Engines mean dodging, lining up Doris, and charging the jump drive.</span></li>
-    </ul>
-    <p class="muted">When things go wrong, hold <b>Get us out of here</b> once the jump drive is warm. You'll lose the salvage, but keep the ship.</p>
-    <div class="ctrl"><button class="btn go" id="start" type="button">Start battle</button></div>
-    <p class="muted" id="load-note" hidden></p>
-    <div class="keys">Keys: Q/A shields · W/S weapons · E/D engines · J jump · Space pause</div>
-  </div>
-</div>
-
-<div class="overlay" id="end" hidden>
-  <div class="card">
-    <div class="eyebrow" id="end-eyebrow">Battle over</div>
-    <h1 id="end-title">Enemy destroyed</h1>
-    <p id="end-text"></p>
-    <div class="stats">
-      <div><span>Time</span><b id="st-time">0s</b></div>
-      <div><span>Dealt</span><b id="st-dealt">0</b></div>
-      <div><span>Taken</span><b id="st-taken">0</b></div>
-      <div><span>Evaded</span><b id="st-ev">0</b></div>
+      <div class="sys" data-sys="engines">
+        <div class="sys-head"><span class="sys-name">Engines</span><span class="crew-tag" id="tag-engines"></span><span class="stat" id="stat-engines"></span></div>
+        <div class="sys-row"><button class="pw" id="engines-minus" data-k="engines" data-d="-1" aria-label="Less power to engines">−</button><div class="pips"></div><button class="pw" id="engines-plus" data-k="engines" data-d="1" aria-label="More power to engines">+</button></div>
+      </div>
     </div>
-    <div class="ctrl"><button class="btn go" id="again" type="button">Fight again</button></div>
+  </section>
+  <button class="tab" id="tab-reactor" type="button" hidden>Reactor</button>
+  <button class="tab" id="tab-orders" type="button" hidden>Orders</button>
+</div>
+
+<div id="banner" aria-live="polite"><b></b><span></span></div>
+
+<!-- loading -->
+<div class="ov" id="loading">
+  <div class="card">
+    <div class="h1">Reactor Duel</div>
+    <div class="loadbar"><i id="load-bar"></i></div>
+    <p class="muted" id="load-note">Loading ships…</p>
   </div>
 </div>
+
+<!-- main menu -->
+<div class="ov" id="menu" hidden>
+  <div class="eyebrow">A captain's game of power and nerve</div>
+  <div class="h1">Reactor<br><em>Duel</em></div>
+  <p>You don't fly the ship. You run its reactor, and your crew will tell you exactly what they think of that.</p>
+  <div class="row"><button class="btn primary" id="m-start" type="button">Start game</button><button class="btn mute" type="button">Sound on</button></div>
+</div>
+
+<!-- ship select -->
+<div class="ov sheet" id="shipsel" hidden>
+  <div class="card">
+    <div class="ship-nav"><button class="arrowbtn" id="ss-prev" type="button" aria-label="Previous ship">‹</button><span class="eyebrow" style="flex:1;text-align:center">Choose your ship · <span class="count" id="ss-count"></span></span><button class="arrowbtn" id="ss-next" type="button" aria-label="Next ship">›</button></div>
+    <div><div class="h1" id="ss-name"></div><div class="eyebrow" id="ss-cls"></div></div>
+    <p id="ss-blurb"></p>
+    <div class="stats" id="ss-stats"></div>
+    <div class="row"><button class="btn" id="ss-back" type="button">Back</button><button class="btn primary" id="ss-choose" type="button" style="flex:1">Choose</button></div>
+  </div>
+</div>
+
+<!-- crew select -->
+<div class="ov sheet" id="crewsel" hidden>
+  <div class="card">
+    <div><div class="eyebrow">Pick your crew</div><p class="muted">One per station. Everyone has a strength and a weakness.</p></div>
+    <div id="cs-list" style="display:grid;gap:10px"></div>
+    <div class="row"><button class="btn" id="cs-back" type="button">Back</button><button class="btn primary" id="cs-go" type="button" style="flex:1">Take off</button></div>
+  </div>
+</div>
+
+<!-- hangar at Fortune -->
+<div class="ov sheet" id="hangar" hidden>
+  <div class="card">
+    <div class="eyebrow">Fortune Station</div>
+    <div class="h1" id="hg-name" style="font-size:40px"></div>
+    <p id="hg-note"></p>
+    <div id="hg-hull"></div>
+    <p class="muted" id="hg-crew" style="font-size:12px"></p>
+    <div class="row"><button class="btn" id="hg-menu" type="button">Main menu</button><button class="btn primary" id="hg-go" type="button" style="flex:1">Let's go</button></div>
+  </div>
+</div>
+
+<!-- system map -->
+<div class="ov" id="map" hidden>
+  <div class="card">
+    <div class="eyebrow" id="map-title">Where to, Captain?</div>
+    <div class="mapbox"><svg id="map-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"></svg><div id="map-nodes"></div></div>
+    <div id="map-info"></div>
+    <div class="row"><button class="btn" id="map-stay" type="button">Stay a while</button><button class="btn primary" id="map-go" type="button" style="flex:1" disabled>Confirm jump</button></div>
+  </div>
+</div>
+
+<!-- towed home -->
+<div class="ov" id="towed" hidden>
+  <div class="card">
+    <div class="eyebrow">Ship lost</div>
+    <div class="h1">Towed home</div>
+    <p>Everyone made it to the escape pods. A tug from Fortune Station hauled what was left of your ship back to the docks.</p>
+    <button class="btn primary" id="tw-go" type="button">Back to Fortune</button>
+  </div>
+</div>
+
+<div id="fade"></div>
+<div id="flash"></div>
 
 <script src="lib/three.min.js"></script>
 <script src="lib/GLTFLoader.js"></script>
-<script>
-(() => {
-  const cv = document.getElementById('game');
-  let W = 0, H = 0, DPR = 1;
-  let GL = null; // WebGL renderer state, once it is up
-  const camState = { x: 0, y: 0, D: 2600, shake: 0 };
-  function resize() {
-    DPR = Math.min(1.75, window.devicePixelRatio || 1); // capped for phone GPUs
-    W = window.innerWidth; H = window.innerHeight;
-    if (GL) {
-      GL.renderer.setPixelRatio(DPR); GL.renderer.setSize(W, H, false);
-      GL.camera.aspect = W / H;
-      GL.camera.setViewOffset(W, H, 0, H * 0.07, W, H); // lift the action above the reactor console
-      GL.camera.updateProjectionMatrix();
-    }
-  }
-  window.addEventListener('resize', resize); resize();
-  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  const C = { shield: '#52c8ff', weapon: '#ff9442', engine: '#b48cff', danger: '#ff5468', good: '#6fe3a5', hull: '#e7edf2' };
-  const SYS = ['shields', 'weapons', 'engines'];
-  const DEG = Math.PI / 180;
-  const rand = (a, b) => a + Math.random() * (b - a);
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; };
-
-  // ---------- Ship definitions (parts drive everything) ----------
-  // mount: 'turret' rotates (traverse °/s) and fires within its arc; 'fixed' fires only within its arc around the nose.
-  const DEFS = {
-    player: {
-      name: 'Kestrel', hullMax: 110, reactor: 10, transfer: 0.8,
-      parts: {
-        shields: { name: 'Aegis deflector', eff: 1, cap: 6 },
-        weapons: { name: 'Weapon bus', eff: 1, cap: 7 },
-        engines: { name: 'Mk I drive', eff: 0.85, cap: 6 }
-      },
-      weapons: [
-        { name: 'Pulse laser', short: 'Laser', mount: 'turret', arc: 30, traverse: 70, mountX: -18,
-          min: 1, cap: 3, base: 3, per: 1.5, interval: 2.2, speed: 600, acc: 0.95, falloff: 0.35, pierce: 0, color: '#ffb070', kind: 'bolt' },
-        { name: 'Rail cannon', short: 'Rail', mount: 'fixed', arc: 20,
-          min: 4, cap: 7, base: 18, per: 3, interval: 8, speed: 1000, acc: 0.95, falloff: 0.15, pierce: 0.35, color: '#fff1c2', kind: 'rail' }
-      ],
-      alloc: { shields: 4, weapons: 3, engines: 3 }
-    },
-    enemy: {
-      name: 'Corsair', hullMax: 140, reactor: 10, transfer: 0.6,
-      parts: {
-        shields: { name: 'Salvaged screen', eff: 1, cap: 5 },
-        weapons: { name: 'Weapon bus', eff: 1, cap: 6 },
-        engines: { name: 'Worn thrusters', eff: 0.7, cap: 5 }
-      },
-      weapons: [
-        { name: 'Autocannon', short: 'Autocannon', mount: 'turret', arc: 40, traverse: 45, mountX: -14,
-          min: 1, cap: 3, base: 3, per: 1.2, interval: 1.8, speed: 520, acc: 0.92, falloff: 0.4, pierce: 0, color: '#ff7a55', kind: 'bolt' },
-        { name: 'Torpedo', short: 'Torpedo', mount: 'fixed', arc: 60,
-          min: 5, cap: 6, base: 32, per: 3, interval: 14, speed: 120, pierce: 0.2, color: '#ff3b5c', kind: 'torpedo', evadeMult: 0.55 }
-      ],
-      alloc: { shields: 4, weapons: 4, engines: 2 }
-    }
-  };
-
-  const RANGE = 700;
-  const SHIP_R = 28; // collision radius of a ship hull
-  const eff = (s, k) => Math.min(s.actual[k], s.def.parts[k].cap) * s.def.parts[k].eff;
-  const shieldMax = s => { const e = eff(s, 'shields'); return e < 0.4 ? 0 : 10 + 6 * e; };
-  const regen = s => 0.8 + 0.3 * eff(s, 'shields');
-  const resist = s => Math.min(0.3, eff(s, 'shields') * 0.05);
-  const evasion = s => Math.min(0.6, eff(s, 'engines') * 0.08);
-  const jumpRate = s => eff(s, 'engines') * 0.45; // % per second
-  const turnRate = s => 22 + eff(s, 'engines') * 7; // degrees per second
-  const distance = () => Math.hypot(P.x - E.x, P.y - E.y);
-  const inRange = () => distance() <= RANGE;
-  const weaponOnline = (s, w) => eff(s, 'weapons') >= w.min - 1e-6;
-  const weaponDmg = (s, w) => w.base + w.per * (Math.min(eff(s, 'weapons'), w.cap) - w.min);
-  // Turrets traverse faster with spare power: +10% per point above the weapon's minimum.
-  const traverse = (s, w) => w.traverse * (1 + 0.1 * Math.max(0, Math.min(eff(s, 'weapons'), w.cap) - w.min));
-  const bearing = (s, foe) => Math.atan2(foe.y - s.y, foe.x - s.x);
-  const muzzleBase = (s, w) => w.mount === 'turret' ? { x: s.x + Math.cos(s.ang) * w.mountX, y: s.y + Math.sin(s.ang) * w.mountX } : { x: s.x, y: s.y };
-  const weaponAim = (s, w, i) => w.mount === 'turret' ? s.ang + s.tr[i] : s.ang;
-  // Unguided accuracy falls off with range and the target's evasion.
-  const hitChance = (s, w, foe) => clamp(w.acc - (Math.hypot(foe.x - s.x, foe.y - s.y) / RANGE) * w.falloff - evasion(foe), 0.05, 0.98);
-  const inArc = (s, w, i, foe) => Math.abs(angDiff(bearing(s, foe), weaponAim(s, w, i))) <= (w.arc / 2) * DEG;
-  // Line of fire: blocked if the straight line between the ships passes through an asteroid.
-  const clearShot = (s, foe) => rocks.every(r => segDist(r.x, r.y, s.x, s.y, foe.x, foe.y) > r.cr * 0.9);
-
-  function makeShip(def, x, y) {
-    const s = {
-      def, hull: def.hullMax, shield: 0, down: false, downT: 0, sinceHit: 9,
-      target: { ...def.alloc }, actual: { ...def.alloc },
-      x, y, vx: 0, vy: 0, ang: 0, bank: 0,
-      orbit: rand(0, Math.PI * 2), orbitDir: Math.random() < 0.5 ? 1 : -1, radius: rand(300, 460), retune: rand(6, 12),
-      mode: 'orbit', modeT: 0, speed: 60, slipX: 0, slipY: 0, jumping: 0, bumpT: 0, breakX: 0, breakY: 0,
-      wt: def.weapons.map(() => rand(0, 0.4)), tr: def.weapons.map(() => 0),
-      flash: 0, spool: 0, dead: false, trail: [], warp: 0
-    };
-    s.shield = shieldMax(s);
-    return s;
-  }
-
-  // ---------- State ----------
-  let P, E, shots, parts, pops, ai, stats, state = 'title', endTimer = 0, outcome = null, time = 0, contact = false, jumpReadyLogged = false;
-  let rocks = [];
-  const cam = camState;
-  const logLines = [];
-  const logEl = document.getElementById('log');
-
-  function reset() {
-    P = makeShip(DEFS.player, -1300, 220);
-    E = makeShip(DEFS.enemy, 1300, -220);
-    P.ang = Math.atan2(E.y - P.y, E.x - P.x); E.ang = P.ang + Math.PI;
-    P.orbitDir = 1; E.orbitDir = -1;
-    shots = []; parts = []; pops = [];
-    ai = { phase: 'skirmish', t: rand(12, 16) };
-    stats = { dealt: 0, taken: 0, evaded: 0, bumps: 0 };
-    makeField();
-    if (GL) buildRockVis();
-    endTimer = 0; outcome = null; time = 0; contact = false; jumpReadyLogged = false;
-    cam.x = 0; cam.y = 0; cam.D = 2600;
-    if (shots) shots.forEach(disposeShot);
-    if (GL) ['P', 'E'].forEach(k => { const vs = GL.ships[k]; vs.spin = 0; vs.trails.forEach(tr => { tr.pts.length = 0; }); });
-    logLines.length = 0; renderLog();
-  }
-
-  // ---------- Battlefield: asteroids ----------
-  // A new field each battle. r = visual radius, cr = collision radius. Starting spots and room to fly between rocks are kept clear.
-  function makeField() {
-    rocks = [];
-    const kinds = ['rock-1', 'rock-2', 'ice-2', 'ice-crystal'];
-    const add = (kind, r) => {
-      for (let t = 0; t < 80; t++) {
-        const x = rand(-1150, 1150), y = rand(-760, 760);
-        if (Math.hypot(x + 1300, y - 220) < r + 300 || Math.hypot(x - 1300, y + 220) < r + 300) continue;
-        if (rocks.some(o => Math.hypot(o.x - x, o.y - y) < o.r + r + 160)) continue;
-        rocks.push({ kind, x, y, r, cr: r * 0.8, rx: rand(0, 6.28), ry: rand(0, 6.28), rz: rand(0, 6.28), spin: rand(-0.15, 0.15) });
-        return;
-      }
-    };
-    add('rock-industrial', rand(115, 145));
-    for (let i = 0; i < 10; i++) add(kinds[Math.floor(Math.random() * kinds.length)], rand(48, 100));
-  }
-
-  // ---------- Log + nudges ----------
-  function log(msg) { logLines.push({ msg }); if (logLines.length > 4) logLines.shift(); renderLog(); }
-  function renderLog() {
-    logEl.innerHTML = '';
-    logLines.forEach((l, i) => { const d = document.createElement('div'); d.textContent = l.msg; if (i === logLines.length - 1) d.className = 'hot'; logEl.appendChild(d); });
-  }
-  const nudgeEl = document.getElementById('nudge'); let nudgeT = 0;
-  function nudge(msg) { nudgeEl.textContent = msg; nudgeEl.classList.add('on'); nudgeT = 1.8; }
-
-  reset();
-
-  // ---------- Power transfer ----------
-  function updatePower(s, dt) {
-    const rate = s.def.transfer * dt;
-    SYS.forEach(k => { if (s.actual[k] > s.target[k]) s.actual[k] = Math.max(s.target[k], s.actual[k] - rate); });
-    let free = s.def.reactor - SYS.reduce((a, k) => a + s.actual[k], 0);
-    SYS.forEach(k => {
-      if (s.actual[k] < s.target[k] && free > 0) {
-        const inc = Math.min(s.target[k] - s.actual[k], rate, free);
-        s.actual[k] += inc; free -= inc;
-      }
-    });
-  }
-
-  function adjust(k, d) {
-    if (state !== 'run' && state !== 'paused') return;
-    const T = P.target;
-    const sum = T.shields + T.weapons + T.engines;
-    if (d > 0) {
-      if (sum >= P.def.reactor) {
-        nudge('No free power. Lower another system first.');
-        const r = document.getElementById('reactor'); r.classList.add('flash'); setTimeout(() => r.classList.remove('flash'), 500);
-        return;
-      }
-      if (T[k] >= P.def.reactor) return;
-      T[k]++;
-      if (T[k] > P.def.parts[k].cap) nudge(`${P.def.parts[k].name} can't use more than ${P.def.parts[k].cap}`);
-    } else {
-      if (T[k] <= 0) return;
-      T[k]--;
-    }
-  }
-
-  // ---------- Shields ----------
-  function updateShields(s, dt) {
-    const mx = shieldMax(s), e = eff(s, 'shields');
-    s.sinceHit += dt;
-    s.flash = Math.max(0, s.flash - dt * 2.5);
-    if (s.down) {
-      if (e >= 0.4) s.downT -= dt * (0.6 + 0.15 * e);
-      if (s.downT <= 0) {
-        s.downT = 0; s.down = false; s.shield = mx * 0.3;
-        log(s === P ? 'Your shields are back online.' : 'Enemy shields rebooted.');
-        crewEvent(s === P ? 'pShieldsUp' : 'eShieldsUp');
-      }
-    } else {
-      if (s.shield > mx) s.shield = Math.max(mx, s.shield - dt * 12);
-      else if (s.sinceHit > 2.5) s.shield = Math.min(mx, s.shield + regen(s) * dt);
-    }
-  }
-
-  // ---------- Weapons: charge, track, fire when in arc ----------
-  function updateWeapons(s, foe, dt) {
-    if (s.dead || s.warp > 0) return;
-    const close = inRange() && !foe.dead && foe.warp === 0;
-    s.def.weapons.forEach((w, i) => {
-      const online = weaponOnline(s, w);
-      if (w.mount === 'turret' && online) {
-        const want = angDiff(bearing(s, foe), s.ang);
-        const step = traverse(s, w) * DEG * dt;
-        s.tr[i] += clamp(angDiff(want, s.tr[i]), -step, step);
-        s.tr[i] = angDiff(s.tr[i], 0);
-      }
-      if (online) {
-        s.wt[i] = Math.min(w.interval, s.wt[i] + dt);
-        if (s.wt[i] >= w.interval && close && inArc(s, w, i, foe) && clearShot(s, foe)) { s.wt[i] = 0; fire(s, foe, w, i); }
-      } else {
-        s.wt[i] = Math.max(0, s.wt[i] - dt * (w.kind === 'torpedo' ? 0.4 : 0.15)); // unpowered weapons hold most of their charge
-      }
-    });
-  }
-
-  function weaponStatus(s, w, i, foe) {
-    if (!weaponOnline(s, w)) return { text: `offline · needs ${w.min}`, off: true };
-    if (s.wt[i] < w.interval) return { text: `charging ${Math.floor(s.wt[i] / w.interval * 100)}%` };
-    if (!inRange()) return { text: 'out of range' };
-    if (!clearShot(s, foe)) return { text: 'blocked' };
-    if (!inArc(s, w, i, foe)) return { text: w.mount === 'turret' ? 'tracking' : 'lining up' };
-    return { text: 'firing' };
-  }
-
-  function fire(s, foe, w, i) {
-    const dmg = weaponDmg(s, w);
-    const a0 = weaponAim(s, w, i);
-    const mb = muzzleBase(s, w), reach = w.mount === 'turret' ? 9 : 30;
-    const ox = mb.x + Math.cos(a0) * reach, oy = mb.y + Math.sin(a0) * reach;
-    burst(ox, oy, 5, w.color, 70);
-    let p;
-    if (w.kind === 'torpedo') {
-      // Guided: target lock, so only the target's engines can shake it.
-      const hit = Math.random() >= evasion(foe) * w.evadeMult;
-      p = { x: ox, y: oy, src: s, tgt: foe, w, dmg, hit, life: 24, age: 0, homing: true,
-        missOff: (Math.random() < 0.5 ? -1 : 1) * rand(55, 95), trail: [] };
-      p.vx = Math.cos(a0) * w.speed; p.vy = Math.sin(a0) * w.speed;
-      log('Torpedo launched at you.');
-      if (s === E) crewEvent('torpLaunch');
-    } else {
-      // Unguided: aim at where the target will be, flight is a straight line.
-      const hc = hitChance(s, w, foe);
-      const hit = Math.random() < hc;
-      let lx = foe.x, ly = foe.y;
-      for (let k = 0; k < 2; k++) { const tt = Math.hypot(lx - ox, ly - oy) / w.speed; lx = foe.x + foe.vx * tt; ly = foe.y + foe.vy * tt; }
-      let a = Math.atan2(ly - oy, lx - ox);
-      if (!hit) a += Math.atan2((Math.random() < 0.5 ? -1 : 1) * rand(42, 80), Math.hypot(lx - ox, ly - oy));
-      p = { x: ox, y: oy, src: s, tgt: foe, w, dmg, hit, life: (RANGE * 1.5) / w.speed, age: 0, homing: false, minD: 1e9, passed: false, trail: [] };
-      p.vx = Math.cos(a) * w.speed; p.vy = Math.sin(a) * w.speed;
-    }
-    shots.push(p);
-    s.muzzle = 1;
-    if (w.kind === 'rail') { cam.shake = Math.max(cam.shake, 3); }
-    if (s === E && w.kind === 'torpedo') {
-      ai.phase = 'recover'; ai.t = 9; E.target = { shields: 5, weapons: 3, engines: 2 };
-    }
-  }
-
-  // Distance from point (px,py) to segment (ax,ay)-(bx,by): catches fast shots between frames.
-  function segDist(px, py, ax, ay, bx, by) {
-    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
-    const t = clamp(((px - ax) * dx + (py - ay) * dy) / l2, 0, 1);
-    return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
-  }
-  const HIT_R = 26;
-
-  function evaded(t, p) {
-    hudTick(t === P ? 'p' : 'e', 'evade', 'evaded');
-    if (t === P) { stats.evaded++; if (p.w.kind === 'torpedo') { log('Torpedo evaded.'); crewEvent('torpEvaded'); } }
-    if (p.src === P && p.w.kind === 'rail') crewEvent('railMiss');
-  }
-
-  function updateShots(dt) {
-    for (const p of shots) {
-      p.life -= dt; p.age += dt;
-      const t = p.tgt;
-      const alive = !t.dead && t.warp === 0;
-      if (p.w.kind === 'torpedo') {
-        let tx = t.x, ty = t.y;
-        if (!p.hit) {
-          const pa = Math.atan2(t.y - p.y, t.x - p.x) + Math.PI / 2;
-          tx += Math.cos(pa) * p.missOff; ty += Math.sin(pa) * p.missOff;
-        }
-        const dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy) || 1;
-        if (p.homing) {
-          const cur = Math.atan2(p.vy, p.vx), want = Math.atan2(dy, dx);
-          const turn = (p.age > 4 ? 4 : 1.2) * dt;
-          const na = cur + clamp(angDiff(want, cur), -turn, turn);
-          p.vx = Math.cos(na) * p.w.speed; p.vy = Math.sin(na) * p.w.speed;
-        }
-        p.x += p.vx * dt; p.y += p.vy * dt;
-        p.trail.push(p.x, p.y); if (p.trail.length > 40) p.trail.splice(0, 2);
-        const hitRock = rocks.find(r => Math.hypot(p.x - r.x, p.y - r.y) < r.cr);
-        if (hitRock) { rockHit(p, hitRock); continue; }
-        if (p.homing) {
-          if (p.hit && d < 16) { if (alive) applyDamage(t, p.dmg, p.w.pierce, p); p.life = 0; }
-          else if (!p.hit && d < 110) { p.homing = false; jink(t); evaded(t, p); }
-        }
-        continue;
-      }
-      const ax = p.x, ay = p.y;
-      p.x += p.vx * dt; p.y += p.vy * dt;
-      const hitRock = rocks.find(r => segDist(r.x, r.y, ax, ay, p.x, p.y) < r.cr);
-      if (hitRock) { rockHit(p, hitRock); continue; }
-      if (!alive) continue;
-      const d = segDist(t.x, t.y, ax, ay, p.x, p.y);
-      if (d < HIT_R) { applyDamage(t, p.dmg, p.w.pierce, p); p.life = 0; continue; }
-      if (d < p.minD) p.minD = d;
-      else if (!p.passed) { p.passed = true; if (p.minD < 90) evaded(t, p); }
-    }
-    shots = shots.filter(p => { if (p.life > 0) return true; disposeShot(p); return false; });
-  }
-
-  // A shot strikes an asteroid: sparks and rock dust, and the shot is spent.
-  function rockHit(p, r) {
-    const big = p.w.kind !== 'bolt';
-    burst(p.x, p.y, big ? 26 : 8, big ? '#ffd7a0' : p.w.color, big ? 220 : 110);
-    burst(p.x, p.y, big ? 14 : 4, '#8d8a86', 90);
-    p.life = 0;
-    if (p.w.kind === 'torpedo') { cam.shake = Math.max(cam.shake, 5); if (p.tgt === P) crewEvent('torpRock'); }
-  }
-
-  function applyDamage(t, dmg, pierce, p) {
-    let hullD = 0, shD = 0;
-    const shielded = t.shield > 0 && !t.down;
-    if (shielded) {
-      const r = resist(t);
-      const sPart = dmg * (1 - pierce) * (1 - r);
-      hullD = dmg * pierce;
-      shD = Math.min(sPart, t.shield);
-      if (sPart >= t.shield) {
-        hullD += (sPart - t.shield) / (1 - r);
-        t.shield = 0; t.down = true; t.downT = 9;
-        log(t === P ? 'Your shields are down!' : 'Enemy shields are down. Hit them hard.');
-        crewEvent(t === P ? 'pShieldsDown' : 'eShieldsDown');
-      } else t.shield -= sPart;
-      t.flash = 1;
-    } else hullD = dmg;
-    t.hull = Math.max(0, t.hull - hullD);
-    t.sinceHit = 0;
-    if (t === P) stats.taken += hullD; else stats.dealt += dmg;
-    const col = shielded ? C.shield : (p.w.kind === 'torpedo' ? C.danger : '#ffcf9e');
-    burst(p.x, p.y, shielded ? 6 : 12, col, shielded ? 120 : 200);
-    const who = t === P ? 'p' : 'e';
-    if (shD > 0.2) hudTick(who, 'sh', shD);
-    if (hullD > 0.2) hudTick(who, 'hull', hullD);
-    if (p.w.kind === 'torpedo' && t === P) { cam.shake = Math.max(cam.shake, 9); crewEvent('torpHit'); }
-    if (p.src === P && p.w.kind === 'rail') crewEvent('railHit');
-    if (p.w.kind === 'ram') cam.shake = Math.max(cam.shake, 6);
-    if (t.hull <= 0 && !t.dead) kill(t);
-  }
-
-  function kill(s) {
-    s.dead = true;
-    for (let i = 0; i < 4; i++) setTimeout(() => burst(s.x + rand(-12, 12), s.y + rand(-12, 12), 30, i % 2 ? C.weapon : '#fff3d6', 320), i * 140);
-    cam.shake = 14;
-    log(s === P ? 'Hull breached. Kestrel lost.' : 'Corsair destroyed.');
-    crewEvent(s === P ? 'lose' : 'win');
-    outcome = s === P ? 'lose' : 'win';
-    endTimer = 1.8;
-  }
-
-  function jink(s) {
-    if (s.dead || s.warp > 0) return;
-    const e = eff(s, 'engines');
-    const a = s.ang + (Math.random() < 0.5 ? 1 : -1) * Math.PI / 2;
-    const imp = 50 + e * 10;
-    s.slipX += Math.cos(a) * imp; s.slipY += Math.sin(a) * imp;
-  }
-
-  function burst(x, y, n, color, sp) {
-    for (let i = 0; i < n; i++) {
-      const a = rand(0, Math.PI * 2), v = rand(sp * 0.2, sp);
-      parts.push({ x, y, h: rand(-4, 6), vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rand(0.3, 0.8), max: 0.8, color });
-    }
-  }
-
-  // ---------- Piloting ----------
-  // Three modes:
-  //   orbit - circle the enemy at a chosen radius, now and then switching direction and radius.
-  //   run   - a fixed weapon (rail, torpedo) is nearly charged: slow down, swing the nose onto the enemy and hold it there until it fires.
-  //   break - after the shot (or if the run gets too close), fly clear for a few seconds before circling again.
-  // Steering then bends the chosen heading around asteroids and the other ship, and the turn rate (set by engine power) limits how fast the nose can swing.
-  function fixedWeapon(s) {
-    let f = null;
-    s.def.weapons.forEach((w, i) => { if (w.mount === 'fixed' && weaponOnline(s, w)) f = { w, i }; });
-    return f;
-  }
-  // Start the run early enough that the nose arrives on target about when the weapon finishes charging.
-  function shouldRun(s, other) {
-    const f = fixedWeapon(s);
-    if (!f || !contact || other.dead) return false;
-    const remaining = f.w.interval - s.wt[f.i];
-    const offNose = Math.abs(angDiff(bearing(s, other), s.ang));
-    const swing = offNose / (turnRate(s) * DEG * 0.8);
-    return remaining <= swing + 1.5 && Math.hypot(other.x - s.x, other.y - s.y) > 260;
-  }
-
-  function updateMove(s, other, dt) {
-    const e = eff(s, 'engines');
-    if (s.warp > 0) {
-      s.warp += dt;
-      const sp = 300 + s.warp * 2400;
-      s.vx = Math.cos(s.ang) * sp; s.vy = Math.sin(s.ang) * sp;
-      s.x += s.vx * dt; s.y += s.vy * dt;
-      return;
-    }
-    if (s.dead) { s.vx *= 0.98; s.vy *= 0.98; s.x += s.vx * dt; s.y += s.vy * dt; s.ang += dt * 0.8; return; }
-    s.bumpT = Math.max(0, s.bumpT - dt);
-
-    const d2o = Math.hypot(other.x - s.x, other.y - s.y);
-    const f = fixedWeapon(s);
-    s.modeT -= dt;
-    if (s.mode === 'orbit' && shouldRun(s, other)) { s.mode = 'run'; s.modeT = 14; s.runShot = f ? s.wt[f.i] : 0; }
-    if (s.mode === 'run') {
-      const fired = !f || s.wt[f.i] < s.runShot - 0.5;          // charge dropped back: the shot went off
-      if (f) s.runShot = Math.max(s.runShot, s.wt[f.i]);
-      if (fired || d2o < 170 || s.modeT <= 0 || other.dead) {
-        s.mode = 'break'; s.modeT = rand(2.5, 3.5);
-        // extend away on the far side of the enemy, slightly off to one side
-        const away = bearing(other, s) + rand(-0.5, 0.5);
-        s.breakX = other.x + Math.cos(away) * 700; s.breakY = other.y + Math.sin(away) * 700;
-      }
-    }
-    if (s.mode === 'break' && s.modeT <= 0) {
-      s.mode = 'orbit'; s.orbit = Math.atan2(s.y - other.y, s.x - other.x); s.radius = rand(340, 460);
-    }
-
-    let gx, gy, speedK = 1;
-    if (s.mode === 'run') {
-      // aim at where the enemy will be when the shot arrives
-      const lead = f ? d2o / f.w.speed : 0.5;
-      gx = other.x + other.vx * lead; gy = other.y + other.vy * lead;
-      speedK = 0.7;                                               // slower = tighter turns while lining up
-    } else if (s.mode === 'break') {
-      gx = s.breakX; gy = s.breakY; speedK = 1.1;
-    } else {
-      s.retune -= dt;
-      if (s.retune <= 0) { s.retune = rand(7, 12); if (Math.random() < 0.4) s.orbitDir *= -1; s.radius = rand(320, 460); }
-      s.orbit += dt * (0.12 + e * 0.03) * s.orbitDir;
-      gx = other.x + Math.cos(s.orbit) * s.radius;
-      gy = other.y + Math.sin(s.orbit) * s.radius;
-    }
-    if (Math.hypot(s.x, s.y) > 1400) { gx -= s.x * 0.5; gy -= s.y * 0.5; }
-
-    // Steer around asteroids: if a rock blocks the straight line to the goal, aim for its edge instead,
-    // and keep passing on the same side until clear (so the ship never dithers nose-first into it).
-    let dx = gx - s.x, dy = gy - s.y;
-    const dl = Math.hypot(dx, dy) || 1;
-    let head = Math.atan2(dy, dx), block = null, bestD = Infinity;
-    for (const r of rocks) {
-      const clear = r.cr + SHIP_R + 45, dr = Math.hypot(r.x - s.x, r.y - s.y);
-      if (dr > dl + clear || dr >= bestD) continue;
-      if (segDist(r.x, r.y, s.x, s.y, gx, gy) < clear) { block = r; bestD = dr; }
-    }
-    if (block) {
-      const clear = block.cr + SHIP_R + 45, toRock = Math.atan2(block.y - s.y, block.x - s.x);
-      if (s.avoidRock !== block) {
-        s.avoidRock = block;
-        const gs = angDiff(head, toRock);
-        s.avoidSide = Math.abs(gs) > 0.05 ? Math.sign(gs) : (angDiff(s.ang, toRock) >= 0 ? 1 : -1);
-      }
-      head = toRock + s.avoidSide * (bestD > clear ? Math.asin(clear / bestD) + 0.08 : Math.PI / 2 + 0.35);
-    } else s.avoidRock = null;
-    // Keep a little distance from the other ship (less during an attack run).
-    let ax = Math.cos(head), ay = Math.sin(head);
-    if (!other.dead) {
-      const rx = s.x - other.x, ry = s.y - other.y, d = Math.hypot(rx, ry) || 1, reach = s.mode === 'run' ? 140 : 230;
-      if (d < reach) { const k = Math.pow(1 - d / reach, 2) * 2.2; ax += (rx / d) * k; ay += (ry / d) * k; }
-    }
-
-    const tr = turnRate(s) * DEG;
-    const desired = Math.atan2(ay, ax);
-    const da = angDiff(desired, s.ang);
-    const turn = clamp(da, -tr * dt, tr * dt);
-    s.ang = angDiff(s.ang + turn, 0);
-    const targetSpeed = speedK * (55 + e * 16) * (Math.abs(da) > 1.6 ? 0.7 : 1);
-    s.speed += (targetSpeed - s.speed) * Math.min(1, dt * 0.8);
-    const slipDecay = Math.exp(-dt * 1.5);
-    s.slipX *= slipDecay; s.slipY *= slipDecay;
-    s.vx = Math.cos(s.ang) * s.speed + s.slipX;
-    s.vy = Math.sin(s.ang) * s.speed + s.slipY;
-    s.x += s.vx * dt; s.y += s.vy * dt;
-    s.bank += (clamp(turn / Math.max(1e-6, tr * dt), -1, 1) * 0.7 - s.bank) * Math.min(1, dt * 3);
-    s.muzzle = Math.max(0, (s.muzzle || 0) - dt * 4);
-    s.trail.push(s.x - Math.cos(s.ang) * 30, s.y - Math.sin(s.ang) * 30);
-    if (s.trail.length > 56) s.trail.splice(0, 2);
-  }
-
-  // ---------- Collisions ----------
-  // Ships bounce off asteroids and each other. Bounces push through the sideways "slip" velocity, so the ship slides back
-  // with its nose unchanged, and the pilot then steers away. Damage scales with the closing speed; shields take part of it.
-  function ram(t, dmg, x, y) {
-    if (state !== 'run' || dmg <= 0 || t.dead || t.warp > 0) return;
-    applyDamage(t, dmg, 0.4, { x, y, w: { kind: 'ram' }, src: null });
-  }
-  function collisions() {
-    for (const s of [P, E]) {
-      if (s.dead || s.warp > 0) continue;
-      for (const r of rocks) {
-        const dx = s.x - r.x, dy = s.y - r.y, d = Math.hypot(dx, dy) || 1, min = r.cr + SHIP_R;
-        if (d >= min) continue;
-        const nx = dx / d, ny = dy / d;
-        s.x = r.x + nx * min; s.y = r.y + ny * min;
-        const vn = s.vx * nx + s.vy * ny;                        // negative when moving into the rock
-        if (vn < 0) { s.slipX -= nx * vn * 1.6; s.slipY -= ny * vn * 1.6; s.speed *= 0.45; }
-        if (vn < -10 && s.bumpT <= 0) {
-          s.bumpT = 0.6;
-          const cx = r.x + nx * r.cr, cy = r.y + ny * r.cr;
-          burst(cx, cy, 18, '#ffcf9e', 160); burst(cx, cy, 10, '#8d8a86', 80);
-          ram(s, (-vn - 10) * 0.12, cx, cy);
-          if (state === 'run') { if (s === P) { stats.bumps++; crewEvent('bumpRock'); } else crewEvent('enemyRock'); }
-        }
-      }
-    }
-    if (P.dead || E.dead || P.warp > 0 || E.warp > 0) return;
-    const dx = P.x - E.x, dy = P.y - E.y, d = Math.hypot(dx, dy) || 1, min = SHIP_R * 2;
-    if (d >= min) return;
-    const nx = dx / d, ny = dy / d, push = (min - d) / 2;
-    P.x += nx * push; P.y += ny * push; E.x -= nx * push; E.y -= ny * push;
-    const vrel = (P.vx - E.vx) * nx + (P.vy - E.vy) * ny;       // negative when closing
-    if (vrel < 0) {
-      P.slipX -= nx * vrel * 0.9; P.slipY -= ny * vrel * 0.9; E.slipX += nx * vrel * 0.9; E.slipY += ny * vrel * 0.9;
-      P.speed *= 0.5; E.speed *= 0.5;
-    }
-    if (vrel < -10 && P.bumpT <= 0) {
-      P.bumpT = E.bumpT = 0.8;
-      const cx = (P.x + E.x) / 2, cy = (P.y + E.y) / 2;
-      burst(cx, cy, 30, '#ffd7a0', 220);
-      ram(P, (-vrel - 10) * 0.1, cx, cy); ram(E, (-vrel - 10) * 0.1, cx, cy);
-      if (state === 'run') { stats.bumps++; crewEvent('bumpShip'); }
-    }
-  }
-
-  // ---------- Enemy AI ----------
-  function updateAI(dt) {
-    if (E.dead) return;
-    if (!contact) {
-      if (inRange()) { contact = true; log('In weapons range. Engage.'); crewEvent('inRange'); }
-      else return;
-    }
-    ai.t -= dt;
-    if (ai.phase === 'skirmish' && ai.t <= 0) {
-      ai.phase = 'torpedo'; E.target = { shields: 1, weapons: 6, engines: 3 };
-      log('Enemy is diverting power to weapons.');
-      crewEvent('torpPhase');
-    } else if (ai.phase === 'recover' && ai.t <= 0) {
-      ai.phase = 'skirmish'; ai.t = rand(14, 20); E.target = { shields: 4, weapons: 4, engines: 2 };
-    }
-  }
-
-  // ---------- Jump drive: charges with engine power; the "Get us out of here" order starts a short countdown ----------
-  function updateJump(dt) {
-    if (P.dead || P.warp > 0) return;
-    if (P.jumping > 0) {
-      P.jumping -= dt;
-      if (P.jumping <= 0) {
-        P.jumping = 0; P.warp = 0.01; outcome = 'escaped'; endTimer = 1.4;
-        log('Jump drive engaged.');
-        burst(P.x, P.y, 24, C.engine, 260);
-      }
-      return;
-    }
-    const r = jumpRate(P);
-    if (r > 0.02) P.spool = Math.min(100, P.spool + dt * r);
-    else P.spool = Math.max(0, P.spool - dt * 0.5);
-  }
-
-  // ---------- Effects bookkeeping (particles and damage numbers) ----------
-  function updateFx(dt) {
-    const f = Math.pow(0.96, dt * 60);
-    for (const q of parts) { q.life -= dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= f; q.vy *= f; }
-    parts = parts.filter(q => q.life > 0);
-    for (const t of pops) t.t -= dt;
-    pops = pops.filter(t => t.t > 0);
-  }
-
-  // ---------- 3D renderer (visual only: reads the flat simulation, never feeds back into it) ----------
-  // Sim (x, y) maps to world (x, height, y). A ship's yaw is -ang about the Y axis; local +X is the nose.
-  const VIS = {
-    player: {
-      hull: 'models/kestrel.json', rotY: Math.PI, scale: 63, glow: 0xc8aaff, trail: [0.7, 0.55, 1], shieldR: 40,
-      tint: 0x3a4d63, outline: [[26, 0], [-6, 13], [-16, 15], [-10, 5], [-18, 4], [-18, -4], [-10, -5], [-16, -15], [-6, -13]],
-      engines: [[-31, 8.9, -5.1], [-31, 8.9, 5.1]], // two nozzles
-      mounts: [
-        { weapon: 0, turret: true, model: 'models/laser-turret.json', rotY: Math.PI / 2, scale: 12, at: [-18.3, 12.6, 0] },
-        { weapon: 1, turret: false, model: 'models/railgun.json', rotY: Math.PI, scale: 15, at: [13.5, 10.4, 0] }
-      ]
-    },
-    enemy: {
-      hull: 'models/corsair.json', rotY: Math.PI / 2, scale: 66, glow: 0xffaa78, trail: [1, 0.55, 0.4], shieldR: 42,
-      tint: 0x5c3b2c, outline: [[22, 5], [22, -5], [10, -9], [6, -18], [-14, -18], [-22, -8], [-22, 8], [-14, 18], [6, 18], [10, 9]],
-      engines: [[-32.4, 11.4, -8.2], [-32.4, 11.4, 0], [-32.4, 11.4, 8.2], [-32.4, 5.3, -9.9], [-32.4, 5.3, 0], [-32.4, 5.3, 9.9]], // two rows of three nozzles
-      mounts: [{ weapon: 0, turret: true, model: 'models/autocannon.json', rotY: Math.PI / 2, scale: 14, at: [-13.9, 15.6, 0] }]
-    }
-  };
-
-  const CAM_TILT = 24 * DEG;
-  const SHOT_Y = 9;
-
-  function radialTex(stops, size) {
-    size = size || 128;
-    const c = document.createElement('canvas'); c.width = c.height = size;
-    const g = c.getContext('2d'), gr = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-    stops.forEach(([o, col]) => gr.addColorStop(o, col));
-    g.fillStyle = gr; g.fillRect(0, 0, size, size);
-    return new THREE.CanvasTexture(c);
-  }
-
-  function initGL() {
-    if (typeof THREE === 'undefined') return null;
-    let renderer;
-    try { renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, powerPreference: 'high-performance' }); }
-    catch (err) { return null; }
-    renderer.setPixelRatio(DPR);
-    renderer.setSize(W, H, false);
-    renderer.outputEncoding = THREE.sRGBEncoding;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.85;
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x05070c);
-    const camera = new THREE.PerspectiveCamera(32, W / H, 10, 22000);
-
-    scene.add(new THREE.HemisphereLight(0x9fb4d8, 0x14121c, 0.55));
-    const key = new THREE.DirectionalLight(0xfff0dd, 1.5); key.position.set(-300, 600, -220); scene.add(key);
-    const rim = new THREE.DirectionalLight(0x9a7bff, 1.1); rim.position.set(420, 160, 520); scene.add(rim);
-    const fill = new THREE.DirectionalLight(0x4fb8ff, 0.45); fill.position.set(220, 300, -520); scene.add(fill);
-    const flash = new THREE.PointLight(0xffc890, 0, 900, 2); flash.position.set(0, 40, 0); scene.add(flash);
-
-    // Starfield in depth layers below the battle plane, so the camera move gives real parallax.
-    // Stars: soft round dots. Three.js already scales point size by the pixel ratio, so sizes here are CSS pixels.
-    const starTex = radialTex([[0, 'rgba(255,255,255,1)'], [0.35, 'rgba(255,255,255,0.55)'], [1, 'rgba(255,255,255,0)']], 32);
-    [[-700, 900, 1.6, 0.55], [-1800, 900, 2.0, 0.7], [-3600, 1100, 2.6, 0.85]].forEach(([y, n, sz, op]) => {
-      const pos = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) { pos[i * 3] = rand(-9000, 9000); pos[i * 3 + 1] = y + rand(-200, 200); pos[i * 3 + 2] = rand(-9000, 9000); }
-      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xcfe0ff, map: starTex, size: sz, sizeAttenuation: false, transparent: true, opacity: op, depthWrite: false })));
-    });
-    const nebTex = radialTex([[0, 'rgba(255,255,255,0.9)'], [0.4, 'rgba(255,255,255,0.25)'], [1, 'rgba(255,255,255,0)']], 256);
-    [[0x3c2870, -2600, -1400, 9000], [0x14506e, 2800, 1600, 8000]].forEach(([col, x, z, s]) => {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(s, s), new THREE.MeshBasicMaterial({ map: nebTex, color: col, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
-      m.rotation.x = -Math.PI / 2; m.position.set(x, -5200, z); scene.add(m);
-    });
-
-    const glowTex = radialTex([[0, 'rgba(255,255,255,1)'], [0.22, 'rgba(255,255,255,0.65)'], [1, 'rgba(255,255,255,0)']]);
-    const wedgeTex = radialTex([[0, 'rgba(255,255,255,1)'], [0.15, 'rgba(255,255,255,0.8)'], [1, 'rgba(255,255,255,0)']]);
-    const dotTex = radialTex([[0, 'rgba(255,255,255,1)'], [0.5, 'rgba(255,255,255,0.5)'], [1, 'rgba(255,255,255,0)']], 64);
-
-    // Particles share one Points buffer.
-    const PCAP = 1200;
-    const pPos = new Float32Array(PCAP * 3), pCol = new Float32Array(PCAP * 3);
-    const pGeo = new THREE.BufferGeometry();
-    pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
-    pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
-    const points = new THREE.Points(pGeo, new THREE.PointsMaterial({ size: 4, map: dotTex, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-    points.frustumCulled = false; scene.add(points);
-
-    const shieldGeo = new THREE.SphereGeometry(1, 40, 20);
-    const shieldVS = 'varying vec3 vN; varying vec3 vV; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }';
-    const shieldFS = 'uniform vec3 color; uniform float opacity; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(1.0 - abs(dot(vN, vV)), 2.4); gl_FragColor = vec4(color * (f * 1.5 + 0.05), opacity); }';
-
-    GL = { renderer, scene, camera, flash, glowTex, wedgeTex, PCAP, pPos, pCol, pGeo, shieldGeo, shieldVS, shieldFS, mats: {}, colors: {} };
-    GL.ships = { P: buildShipVis(VIS.player, true), E: buildShipVis(VIS.enemy, false) };
-    GL.arcs = buildArcs();
-    buildRockVis();
-    buildBackdropRocks();
-    GL.shotGeo = {
-      bolt: new THREE.BoxGeometry(14, 1.1, 1.1).translate(-7, 0, 0),
-      railCore: new THREE.BoxGeometry(50, 1.4, 1.4).translate(-25, 0, 0),
-      railGlow: new THREE.BoxGeometry(50, 4.5, 4.5).translate(-25, 0, 0),
-      torp: new THREE.SphereGeometry(2.6, 16, 10)
-    };
-    return GL;
-  }
-
-  const colorOf = c => GL.colors[c] || (GL.colors[c] = new THREE.Color(c));
-  function addMat(color, opacity) {
-    const k = color + '|' + (opacity || 1);
-    return GL.mats[k] || (GL.mats[k] = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: opacity || 1, blending: THREE.AdditiveBlending, depthWrite: false }));
-  }
-
-  // ---- placeholders (used until a model loads, or if it fails) ----
-  function placeholderHull(vis) {
-    const shape = new THREE.Shape();
-    vis.outline.forEach(([x, y], i) => i ? shape.lineTo(x * 1.35, -y * 1.35) : shape.moveTo(x * 1.35, -y * 1.35));
-    const geo = new THREE.ExtrudeGeometry(shape, { depth: 8, bevelEnabled: true, bevelSize: 1.2, bevelThickness: 1.2, bevelSegments: 2 });
-    geo.rotateX(-Math.PI / 2);
-    return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: vis.tint, metalness: 0.6, roughness: 0.45 }));
-  }
-  function placeholderTurret(enemy) {
-    const g = new THREE.Group();
-    const body = new THREE.MeshStandardMaterial({ color: enemy ? 0x4a3a30 : 0x3e4955, metalness: 0.4, roughness: 0.55 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x24262b, metalness: 0.8, roughness: 0.35 });
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(5.2, 5.8, 2, 20), body); base.position.y = 1; g.add(base);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(7, 3.6, 6.4), body); head.position.set(0.5, 3.8, 0); g.add(head);
-    if (enemy) { const ammo = new THREE.Mesh(new THREE.BoxGeometry(3, 2.4, 2.6), dark); ammo.position.set(-2.6, 3.6, 3.6); g.add(ammo); }
-    [-1.3, 1.3].forEach(z => {
-      const b = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 10, 10), dark);
-      b.rotation.z = -Math.PI / 2; b.position.set(8.5, 3.8, z); g.add(b);
-    });
-    return g;
-  }
-  function placeholderRail() {
-    const g = new THREE.Group();
-    const m = new THREE.MeshStandardMaterial({ color: 0x55606c, metalness: 0.8, roughness: 0.35 });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(10, 3.4, 6), m); body.position.set(-6, 1.7, 0); g.add(body);
-    [-1.6, 1.6].forEach(z => { const r = new THREE.Mesh(new THREE.BoxGeometry(14, 1, 1), m); r.position.set(6, 1.6, z); g.add(r); });
-    return g;
-  }
-
-  function buildShipVis(vis, isPlayer) {
-    const root = new THREE.Group(), tilt = new THREE.Group(), hullSlot = new THREE.Group();
-    root.add(tilt); tilt.add(hullSlot);
-    hullSlot.add(placeholderHull(vis));
-    const mounts = vis.mounts.map(m => {
-      const pivot = new THREE.Group(); pivot.position.set(m.at[0], m.at[1], m.at[2]); tilt.add(pivot);
-      const slot = new THREE.Group(); pivot.add(slot);
-      slot.add(m.turret ? placeholderTurret(!isPlayer) : placeholderRail());
-      return { m, pivot, slot };
-    });
-    const engines = vis.engines.map(p => {
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: GL.glowTex, color: vis.glow, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
-      sp.position.set(p[0], p[1], p[2]); tilt.add(sp); return sp;
-    });
-    const shieldMat = new THREE.ShaderMaterial({
-      uniforms: { color: { value: new THREE.Color(0x52c8ff) }, opacity: { value: 0 } },
-      vertexShader: GL.shieldVS, fragmentShader: GL.shieldFS,
-      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
-    });
-    const shield = new THREE.Mesh(GL.shieldGeo, shieldMat);
-    shield.scale.set(vis.shieldR, vis.shieldR * 0.42, vis.shieldR * 0.78); shield.position.y = 8;
-    root.add(shield);
-
-    const TN = 30;
-    const trails = engines.map(() => {
-      const pos = new Float32Array(TN * 3), col = new Float32Array(TN * 3), geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-      line.frustumCulled = false; GL.scene.add(line);
-      return { line, geo, pos, col, pts: [] };
-    });
-    GL.scene.add(root);
-    return { vis, root, tilt, hullSlot, mounts, engines, shield, trails, TN, sampleT: 0, pitch: 0, lastSpeed: 0, phase: rand(0, 6), spin: 0 };
-  }
-
-  // ---- firing arcs ----
-  // Two thin laser edges along the arc's limits: solid near the ship, then breaking into dashes that fade with range,
-  // with a very faint glow filling the space between. Drawn in a shader on a flat sector.
-  const ARC_VS = 'varying vec2 vP; void main(){ vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
-  const ARC_FS = [
-    'uniform vec3 color; uniform float opacity; uniform float halfA; uniform float len; uniform float crawl; uniform float px;',
-    'varying vec2 vP;',
-    'void main(){',
-    '  float r = length(vP);',
-    '  float d = clamp(r / len, 0.0, 1.0);',
-    '  float a = abs(atan(vP.y, vP.x));',
-    '  float edge = r * sin(max(halfA - a, 0.0));',                       // distance in from the arc limit, in world units
-    '  float core = 1.0 - smoothstep(0.0, 1.8 * px, edge);',
-    '  float halo = (1.0 - smoothstep(0.0, 9.0 * px, edge)) * 0.3;',
-    '  float gap = mix(1.0, 0.22, smoothstep(0.2, 0.95, d));',         // dashes get shorter with range
-    '  float dash = step(fract((r - crawl) / 30.0), gap);',
-    '  float line = (core + halo) * mix(1.0, dash, smoothstep(0.16, 0.3, d)) * pow(1.0 - d, 1.3);',
-    '  float fill = 0.05 * pow(1.0 - d, 1.6);',
-    '  float alpha = (line + fill) * opacity;',
-    '  gl_FragColor = vec4(color * alpha, alpha);',
-    '}'].join('\n');
-  function buildArcs() {
-    const mk = (arcDeg, color) => {
-      const geo = new THREE.CircleGeometry(RANGE, 40, -(arcDeg / 2) * DEG, arcDeg * DEG);
-      geo.rotateX(-Math.PI / 2);
-      const mat = new THREE.ShaderMaterial({
-        uniforms: { color: { value: new THREE.Color(color) }, opacity: { value: 0 }, halfA: { value: (arcDeg / 2) * DEG }, len: { value: RANGE }, crawl: { value: 0 }, px: { value: 1 } },
-        vertexShader: ARC_VS, fragmentShader: ARC_FS, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.y = 1.5; GL.scene.add(mesh); return mesh;
-    };
-    const pw = DEFS.player.weapons, ew = DEFS.enemy.weapons;
-    return { P: [mk(pw[0].arc, 0xff9a52), mk(pw[1].arc, 0xfff1c2)], torp: mk(ew[1].arc, 0xff5468) };
-  }
-
-  // ---- asteroids ----
-  const ROCK_FILES = {
-    'rock-1': 'models/rock-1.json', 'rock-2': 'models/rock-2.json', 'rock-industrial': 'models/rock-industrial.json',
-    'ice-2': 'models/ice-2.json', 'ice-crystal': 'models/ice-crystal.json'
-  };
-  const LOD_FILES = ['models/rock-1-lod.json', 'models/rock-2-lod.json', 'models/ice-2-lod.json', 'models/ice-crystal-lod.json'];
-  const rockTpl = {};            // loaded models, centred and scaled to radius 1
-  function rockPlaceholder() {
-    return new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), new THREE.MeshStandardMaterial({ color: 0x4a4b52, roughness: 0.95, metalness: 0, flatShading: true }));
-  }
-  function normaliseRock(obj) {
-    obj.traverse(o => { if (o.isMesh && o.material) { o.material.metalness = Math.min(o.material.metalness, 0.2); o.material.roughness = Math.max(o.material.roughness, 0.75); } });
-    const box = new THREE.Box3().setFromObject(obj), c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
-    obj.position.sub(c);
-    const g = new THREE.Group(); g.add(obj);
-    g.scale.setScalar(2 / Math.max(sz.x, sz.y, sz.z));
-    return g;
-  }
-  function rockModel(key) { return rockTpl[key] ? rockTpl[key].clone() : rockPlaceholder(); }
-  // Arena rocks follow the simulation's field and are rebuilt each battle.
-  function buildRockVis() {
-    (GL.rockVis || []).forEach(v => GL.scene.remove(v.holder));
-    GL.rockVis = rocks.map(r => {
-      const holder = new THREE.Group(), spin = new THREE.Group(), slot = new THREE.Group();
-      holder.add(spin); spin.add(slot);
-      holder.position.set(r.x, 0, r.y);
-      if (r.kind === 'rock-industrial') { spin.rotation.set(-Math.PI / 2 + 0.35, r.ry, 0); }   // lay the ring face-up, tipped toward the camera
-      else spin.rotation.set(r.rx, r.ry, r.rz);
-      slot.scale.setScalar(r.r);
-      slot.add(rockModel(r.kind));
-      GL.scene.add(holder);
-      return { r, holder, spin, slot };
-    });
-  }
-  // Background rocks: low-detail, well below the battle plane, purely for depth.
-  function buildBackdropRocks() {
-    GL.backdrop = [];
-    for (let i = 0; i < 34; i++) {
-      const holder = new THREE.Group(), slot = new THREE.Group();
-      holder.add(slot);
-      const depth = rand(260, 2400);
-      holder.position.set(rand(-3600, 3600), -depth, rand(-2600, 2600));
-      holder.rotation.set(rand(0, 6.28), rand(0, 6.28), rand(0, 6.28));
-      slot.scale.setScalar(rand(30, 70) + depth * rand(0.03, 0.08));
-      const lod = i % LOD_FILES.length;
-      slot.add(rockModel('lod' + lod));
-      GL.scene.add(holder);
-      GL.backdrop.push({ holder, slot, lod, ax: new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).normalize(), sp: rand(-0.08, 0.08) });
-    }
-  }
-  function refreshRockModels() {
-    (GL.rockVis || []).forEach(v => { if (rockTpl[v.r.kind] && !v.real) { v.slot.clear(); v.slot.add(rockModel(v.r.kind)); v.real = true; } });
-    (GL.backdrop || []).forEach(b => { if (rockTpl['lod' + b.lod] && !b.real) { b.slot.clear(); b.slot.add(rockModel('lod' + b.lod)); b.real = true; } });
-  }
-  function updateRockVis(dt) {
-    (GL.rockVis || []).forEach(v => { v.spin.rotation.y += v.r.spin * dt; });
-    (GL.backdrop || []).forEach(b => { b.holder.rotateOnAxis(b.ax, b.sp * dt); });
-  }
-
-  // ---- model loading ----
-  function loadModel(url) {
-    return new Promise((res, rej) => new THREE.GLTFLoader().load(url, g => res(g.scene), undefined, rej));
-  }
-  function fitModel(obj, rotY, scale) {
-    obj.rotation.y = rotY; obj.scale.setScalar(scale);
-    // No reflection map is used (it fails on some GPUs), so tone down metal to keep parts lit by the direct lights.
-    obj.traverse(o => { if (o.isMesh && o.material) { o.material.metalness = Math.min(o.material.metalness, 0.45); } });
-    const g = new THREE.Group(); g.add(obj); return g;
-  }
-  function loadAssets() {
-    if (!GL || !THREE.GLTFLoader) return Promise.resolve(-1);
-    const jobs = [];
-    const cache = {};
-    const get = url => cache[url] || (cache[url] = loadModel(url));
-    [['P', VIS.player], ['E', VIS.enemy]].forEach(([k, vis]) => {
-      const vs = GL.ships[k];
-      jobs.push(get(vis.hull).then(obj => { vs.hullSlot.clear(); vs.hullSlot.add(fitModel(obj.clone(), vis.rotY, vis.scale)); }));
-      vs.mounts.forEach(mt => {
-        if (!mt.m.model) return;
-        jobs.push(get(mt.m.model).then(obj => { mt.slot.clear(); mt.slot.add(fitModel(obj.clone(), mt.m.rotY, mt.m.scale)); }));
-      });
-    });
-    Object.entries(ROCK_FILES).forEach(([k, url]) => jobs.push(loadModel(url).then(obj => { rockTpl[k] = normaliseRock(obj); refreshRockModels(); })));
-    LOD_FILES.forEach((url, i) => jobs.push(loadModel(url).then(obj => { rockTpl['lod' + i] = normaliseRock(obj); refreshRockModels(); })));
-    return Promise.allSettled(jobs).then(r => r.filter(x => x.status === 'rejected').length);
-  }
-
-  // ---- per-frame visual updates ----
-  function updateShipVis(vs, s, foe, dt, t) {
-    if (s.warp > 0.6 || s.blown) {
-      vs.root.visible = false; vs.trails.forEach(tr => { tr.pts.length = 0; tr.geo.setDrawRange(0, 0); });
-      return;
-    }
-    vs.root.visible = true;
-    vs.root.position.set(s.x, Math.sin(t * 0.9 + vs.phase) * 1.2, s.y);
-    vs.root.rotation.y = -s.ang;
-    vs.root.scale.set(1 + (s.warp > 0 ? s.warp * 6 : 0), 1, 1);
-
-    // Pitch: nose dips under acceleration and lifts when slowing. Roll: bank into turns and slides.
-    const accel = (s.speed - vs.lastSpeed) / Math.max(dt, 1e-3); vs.lastSpeed = s.speed;
-    vs.pitch += (clamp(-accel * 0.004, -0.1, 0.1) - vs.pitch) * Math.min(1, dt * 3);
-    const lat = s.slipX * -Math.sin(s.ang) + s.slipY * Math.cos(s.ang);
-    let roll = (s.bank / 0.7) * 22 * DEG + clamp(lat / 140, -0.3, 0.3) + Math.sin(t * 0.7 + vs.phase) * 2 * DEG;
-    roll = clamp(roll, -25 * DEG, 25 * DEG);
-    let pitch = vs.pitch + Math.sin(t * 0.55 + vs.phase * 2) * 1.2 * DEG;
-    if (s.dead) {
-      vs.spin += dt * 1.8; roll = vs.spin; pitch = vs.spin * 0.4;
-      s.deathT = (s.deathT || 0) + dt;
-      if (s.deathT > 1.15 && !s.blown) {
-        s.blown = true;
-        burst(s.x, s.y, 70, '#fff3d6', 380); burst(s.x, s.y, 50, C.weapon, 260);
-        GL.flash.position.set(s.x, 60, s.y); GL.flash.intensity = 6;
-        camState.shake = Math.max(camState.shake, 16);
-      }
-    }
-    vs.tilt.rotation.set(roll, 0, pitch);
-
-    vs.mounts.forEach(mt => { if (mt.m.turret) mt.pivot.rotation.y = -s.tr[mt.m.weapon]; });
-
-    const e = eff(s, 'engines');
-    vs.engines.forEach(sp => {
-      sp.visible = !s.dead;
-      const k = 5 + e * 2.6 + Math.random() * 1 + (s.warp > 0 ? 24 : 0);
-      sp.scale.set(k, k, 1); sp.material.opacity = 0.45 + e * 0.08;
-    });
-
-    const mx = shieldMax(s) || 1;
-    const on = !s.dead && s.shield > 0 && !s.down && s.warp === 0;
-    vs.shield.visible = on;
-    if (on) vs.shield.material.uniforms.opacity.value = 0.12 + 0.3 * (s.shield / mx) + 1.1 * s.flash;
-
-    // One trail per engine nozzle, sampled about 30 times a second from the nozzle's real 3D position.
-    vs.root.updateMatrixWorld(true);
-    vs.sampleT += dt;
-    const sample = vs.sampleT >= 1 / 30; if (sample) vs.sampleT = 0;
-    const [r, g, b] = vs.vis.trail, wp = new THREE.Vector3();
-    vs.trails.forEach((tr, k) => {
-      if (sample && !s.dead) {
-        vs.engines[k].getWorldPosition(wp);
-        tr.pts.push(wp.x, wp.y, wp.z);
-        if (tr.pts.length > vs.TN * 3) tr.pts.splice(0, 3);
-      } else if (sample && s.dead && tr.pts.length) tr.pts.splice(0, 3);
-      const n = tr.pts.length / 3;
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * (0.18 + e * 0.09);
-        tr.pos[i * 3] = tr.pts[i * 3]; tr.pos[i * 3 + 1] = tr.pts[i * 3 + 1]; tr.pos[i * 3 + 2] = tr.pts[i * 3 + 2];
-        tr.col[i * 3] = r * a; tr.col[i * 3 + 1] = g * a; tr.col[i * 3 + 2] = b * a;
-      }
-      tr.geo.attributes.position.needsUpdate = true; tr.geo.attributes.color.needsUpdate = true;
-      tr.geo.setDrawRange(0, n);
-    });
-  }
-
-  function updateArcVis(t) {
-    const A = GL.arcs;
-    // world units per screen pixel, so the edge lines stay a constant on-screen width at any zoom
-    const px = (2 * camState.D * Math.tan(GL.camera.fov * DEG / 2)) / Math.max(1, H);
-    A.P.forEach(m => { m.material.uniforms.px.value = px; }); A.torp.material.uniforms.px.value = px;
-    const showP = state !== 'title' && !P.dead && P.warp === 0;
-    P.def.weapons.forEach((w, i) => {
-      const mesh = A.P[i], u = mesh.material.uniforms;
-      mesh.visible = showP && weaponOnline(P, w);
-      if (!mesh.visible) return;
-      const ready = P.wt[i] >= w.interval, onT = ready && inArc(P, w, i, E) && inRange() && clearShot(P, E);
-      const o = muzzleBase(P, w);
-      mesh.position.set(o.x, 1.5, o.y);
-      mesh.rotation.y = -weaponAim(P, w, i);
-      u.opacity.value = onT ? 1.25 : ready ? 0.85 : 0.3 + 0.35 * (P.wt[i] / w.interval);
-      u.crawl.value = ready ? t * 60 : 0;
-    });
-    const tw = E.def.weapons[1];
-    const showT = state !== 'title' && !E.dead && ai.phase === 'torpedo' && weaponOnline(E, tw);
-    A.torp.visible = showT;
-    if (showT) {
-      const u = A.torp.material.uniforms, pct = E.wt[1] / tw.interval;
-      A.torp.position.set(E.x, 1.5, E.y); A.torp.rotation.y = -E.ang;
-      u.opacity.value = 0.35 + 0.7 * pct * (0.6 + 0.4 * Math.sin(t * 6));
-      u.crawl.value = t * 40 * pct;
-    }
-  }
-
-  function shotMesh(p) {
-    const g = new THREE.Group();
-    if (p.w.kind === 'bolt') {
-      g.add(new THREE.Mesh(GL.shotGeo.bolt, addMat(p.w.color)));
-    } else if (p.w.kind === 'rail') {
-      g.add(new THREE.Mesh(GL.shotGeo.railGlow, addMat('#ffe9b0', 0.35)));
-      g.add(new THREE.Mesh(GL.shotGeo.railCore, addMat(p.w.color)));
-    } else {
-      g.add(new THREE.Mesh(GL.shotGeo.torp, addMat('#ff6a7c')));
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: GL.glowTex, color: 0xff3b5c, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
-      sp.scale.set(26, 26, 1); g.add(sp); g.userData.glow = sp;
-      const n = 20, pos = new Float32Array(n * 3), col = new Float32Array(n * 3), geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-      line.frustumCulled = false; GL.scene.add(line); p.tline = line;
-    }
-    GL.scene.add(g);
-    return g;
-  }
-  function disposeShot(p) {
-    if (p.mesh) { GL && GL.scene.remove(p.mesh); p.mesh = null; }
-    if (p.tline) { GL && GL.scene.remove(p.tline); p.tline.geometry.dispose(); p.tline.material.dispose(); p.tline = null; }
-  }
-  function updateShotVis() {
-    for (const p of shots) {
-      if (!p.mesh) p.mesh = shotMesh(p);
-      p.mesh.position.set(p.x, SHOT_Y, p.y);
-      p.mesh.rotation.y = -Math.atan2(p.vy, p.vx);
-      if (p.w.kind === 'torpedo') {
-        const k = 22 + Math.sin(p.age * 18) * 6; p.mesh.userData.glow.scale.set(k, k, 1);
-        const tr = p.trail, n = Math.min(20, tr.length / 2), off = tr.length / 2 - n;
-        const pos = p.tline.geometry.attributes.position.array, col = p.tline.geometry.attributes.color.array;
-        for (let i = 0; i < n; i++) {
-          const j = off + i, a = (i / n) * 0.6;
-          pos[i * 3] = tr[j * 2]; pos[i * 3 + 1] = SHOT_Y; pos[i * 3 + 2] = tr[j * 2 + 1];
-          col[i * 3] = a; col[i * 3 + 1] = 0.45 * a; col[i * 3 + 2] = 0.4 * a;
-        }
-        p.tline.geometry.attributes.position.needsUpdate = true; p.tline.geometry.attributes.color.needsUpdate = true;
-        p.tline.geometry.setDrawRange(0, n);
-      }
-    }
-  }
-
-  function updateParticleVis() {
-    const n = Math.min(parts.length, GL.PCAP), start = parts.length - n;
-    for (let i = 0; i < n; i++) {
-      const q = parts[start + i], c = colorOf(q.color), a = Math.max(0, q.life / q.max);
-      GL.pPos[i * 3] = q.x; GL.pPos[i * 3 + 1] = SHOT_Y + (q.h || 0); GL.pPos[i * 3 + 2] = q.y;
-      GL.pCol[i * 3] = c.r * a; GL.pCol[i * 3 + 1] = c.g * a; GL.pCol[i * 3 + 2] = c.b * a;
-    }
-    GL.pGeo.attributes.position.needsUpdate = true; GL.pGeo.attributes.color.needsUpdate = true;
-    GL.pGeo.setDrawRange(0, n);
-  }
-
-  function updateCamera(dt) {
-    const cam = GL.camera, aspect = W / Math.max(1, H), tanH = Math.tan(cam.fov * DEG / 2);
-    const warping = P.warp > 0;
-    const fo = camState.focus; // optional: centre on one ship for inspection
-    const tx = fo ? fo.x : warping ? E.x : (P.x + E.x) / 2, ty = fo ? fo.y : warping ? E.y : (P.y + E.y) / 2;
-    const dx = warping ? 0 : Math.abs(P.x - E.x), dy = warping ? 0 : Math.abs(P.y - E.y);
-    // Fit both ships; the HUD covers the top and bottom, so the usable height is about 60% of the screen.
-    // Portrait screens look along the x axis so the fight runs up and down the screen (your ship starts at the bottom).
-    const portrait = aspect < 1;
-    let D = portrait
-      ? Math.max((dy / 2 + 170) / (tanH * aspect), (dx / 2 + 150) / (tanH * 0.55))
-      : Math.max((dx / 2 + 170) / (tanH * aspect), (dy / 2 + 150) / (tanH * 0.6));
-    D = camState.fixD || clamp(D, 320, 4200); // fixD: optional close-up for inspection
-    camState.x += (tx - camState.x) * Math.min(1, dt * 3);
-    camState.y += (ty - camState.y) * Math.min(1, dt * 3);
-    camState.D += (D - camState.D) * Math.min(1, dt * 2);
-    camState.shake = Math.max(0, camState.shake - dt * 20);
-    const sh = reduceMotion ? 0 : camState.shake;
-    const sx = rand(-sh, sh), sz = rand(-sh, sh);
-    if (portrait) cam.position.set(camState.x - camState.D * Math.sin(CAM_TILT) + sx, camState.D * Math.cos(CAM_TILT), camState.y + sz);
-    else cam.position.set(camState.x + sx, camState.D * Math.cos(CAM_TILT), camState.y + camState.D * Math.sin(CAM_TILT) + sz);
-    cam.lookAt(camState.x + sx, 0, camState.y + sz);
-    GL.flash.intensity = Math.max(0, GL.flash.intensity - dt * 9);
-  }
-
-  function renderFrame(dt, t) {
-    if (!GL) return;
-    updateCamera(dt);
-    updateShipVis(GL.ships.P, P, E, dt, t);
-    updateShipVis(GL.ships.E, E, P, dt, t);
-    updateArcVis(t);
-    updateShotVis();
-    updateParticleVis();
-    updateRockVis(dt);
-    GL.renderer.render(GL.scene, GL.camera);
-  }
-
-  // ---------- HUD ----------
-  function setBar(id, val, max, text, warn) {
-    const el = document.getElementById(id);
-    el.querySelector('.fill').style.width = (max > 0 ? clamp(val / max, 0, 1) * 100 : 0) + '%';
-    el.querySelector('output').textContent = text;
-    el.classList.toggle('warn', !!warn);
-  }
-
-  const pipRows = {};
-  document.querySelectorAll('.sys').forEach(sysEl => {
-    const k = sysEl.dataset.sys, row = sysEl.querySelector('.pips');
-    pipRows[k] = [];
-    for (let i = 0; i < DEFS.player.reactor; i++) {
-      const d = document.createElement('div'); d.className = 'pip';
-      if (i >= DEFS.player.parts[k].cap) d.classList.add('over');
-      row.appendChild(d); pipRows[k].push(d);
-    }
-  });
-
-  // ---------- Crew voices ----------
-  // Every line appears as a chat bubble above the console, rises and fades. Each line has a cooldown so nobody nags,
-  // and a crew member's lower-priority lines wait while they're mid-sentence. Station readouts sit beside each power row.
-  const CREW = ['tally', 'fergus', 'dot', 'juno'];
-  const voice = {}, saidAt = {}, later = [];
-  let pollT = 0;
-  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
-  function crewReset() {
-    CREW.forEach(id => { voice[id] = { text: '', until: -1, prio: 0 }; });
-    for (const k in saidAt) delete saidAt[k];
-    later.length = 0; pollT = 0;
-  }
-  crewReset();
-  function say(id, text, o) {
-    o = o || {};
-    const key = o.key || text, cd = o.cd === undefined ? 15 : o.cd, prio = o.prio || 1, dur = o.dur || 5.5;
-    if (saidAt[key] !== undefined && time - saidAt[key] < cd) return false;
-    const v = voice[id];
-    if (time < v.until && v.prio > prio) return false;
-    v.text = text; v.until = time + Math.min(dur, 3); v.prio = prio; saidAt[key] = time;
-    postBubble(id, text, prio, dur);
-    return true;
-  }
-  const sayLater = (delay, id, text, o) => later.push({ at: time + delay, id, text, o });
-
-  // One-off moments, called from the battle code.
-  function crewEvent(ev) {
-    const rail = P.def.weapons[1];
-    switch (ev) {
-      case 'start':
-        say('tally', pick(["Contact! One Corsair gunship, coming our way.", "Bandit ahead! Corsair gunship. Ugly one, too."]), { prio: 2 });
-        sayLater(1.4, 'juno', pick(["Nice day for it.", "Seatbelts, everyone."]), { prio: 1, dur: 4 });
-        sayLater(2.4, 'fergus', "Shields are warm. Don't break them.", { prio: 1, dur: 4 });
-        break;
-      case 'inRange':
-        say('tally', pick(["We're in range. Here we go!", "In range! Everyone look busy."]), { prio: 2 });
-        break;
-      case 'torpPhase':
-        say('tally', pick(["Ooh, they're pulling power off shields. That's a torpedo face.", "They're powering up something nasty. Torpedo, I reckon."]), { prio: 3 });
-        if (weaponOnline(P, rail)) sayLater(1.2, 'dot', "Their shields are thinning. Doris is interested.", { prio: 2 });
-        break;
-      case 'torpLaunch':
-        say('tally', pick(["Torpedo away! Incoming!", "Torpedo! Torpedo! That's the one!"]), { prio: 4, dur: 4 });
-        sayLater(5, 'tally', "They're putting it all back into shields. Window's closing.", { prio: 2, key: 'recover', cd: 20 });
-        break;
-      case 'torpEvaded':
-        say('juno', pick(["Hmm hmm hmm... dodged.", "Not today, torpedo.", "Missed by a mile. Well, a metre."]), { prio: 3, key: 'jEv', cd: 4 });
-        sayLater(0.8, 'tally', "Missed us! Ha!", { prio: 2, key: 'tEv', cd: 4 });
-        break;
-      case 'torpHit':
-        say('tally', pick(["Ow. That one landed.", "Direct hit. On us. Wrong direction."]), { prio: 3, key: 'tHit', cd: 4 });
-        sayLater(0.9, 'fergus', pick(["She's still flying. Mostly.", "That's going to need tape."]), { prio: 3, key: 'fHit', cd: 4 });
-        break;
-      case 'enemyRecover':
-        say('tally', "They're putting it all back into shields. Window's closing.", { prio: 2, cd: 20 });
-        break;
-      case 'eShieldsDown':
-        say('tally', pick(["Their shields are down! Hit them!", "Shields down on the Corsair! Now's our chance!"]), { prio: 4, key: 'eDown', cd: 6 });
-        if (P.target.weapons < 6) sayLater(0.7, 'dot', "Their shields are down! More power to the guns!", { prio: 4, key: 'dotKill', cd: 12 });
-        break;
-      case 'eShieldsUp':
-        say('tally', "Their shields are back up. Boo.", { prio: 2, cd: 10 });
-        break;
-      case 'pShieldsDown':
-        say('fergus', `Shields are down! Feed her and she'll be back in ${Math.ceil(P.downT / (0.6 + 0.15 * Math.max(eff(P, 'shields'), 0.4)))}.`, { prio: 4, key: 'shDown', cd: 6 });
-        break;
-      case 'pShieldsUp':
-        say('fergus', pick(["Shields back up. Good girl.", "Shields are back. You're welcome."]), { prio: 2, cd: 8 });
-        break;
-      case 'railHit':
-        say('dot', pick(["Doris says hello.", "Doris connects!", "Ooh, that one stung them."]), { prio: 2, key: 'railHit', cd: 5 });
-        break;
-      case 'railMiss':
-        say('dot', pick(["Doris missed. She's embarrassed.", "Wide! Doris blames the pilot."]), { prio: 2, key: 'railMiss', cd: 5 });
-        if (Math.random() < 0.5) sayLater(1.1, 'juno', "I heard that.", { prio: 1, key: 'heard', cd: 30, dur: 3 });
-        break;
-      case 'win':
-        say('tally', pick(["Got 'em! Salvage time!", "Corsair down! Drinks are on Fergus!"]), { prio: 5, dur: 9 });
-        sayLater(1, 'fergus', "Drinks are not on Fergus.", { prio: 5, dur: 8 });
-        sayLater(1.6, 'dot', "Good work, Doris.", { prio: 5, dur: 8 });
-        break;
-      case 'lose':
-        say('fergus', "Abandon ship! Calmly! In an orderly fashion!", { prio: 5, dur: 9 });
-        sayLater(0.6, 'tally', "Mayday, mayday!", { prio: 5, dur: 8 });
-        break;
-      case 'bumpRock':
-        say('juno', pick(["Rock! Sorry. Rock.", "Who put that there?", "That rock came out of nowhere. Space nowhere."]), { prio: 3, key: 'jRock', cd: 6 });
-        sayLater(1, 'fergus', pick(["She's not a pinball, Juno!", "I just painted that bit."]), { prio: 2, key: 'fRock', cd: 12 });
-        break;
-      case 'enemyRock':
-        say('tally', pick(["Ha! They hit a rock!", "Corsair just headbutted an asteroid. Rock wins."]), { prio: 2, key: 'tRock', cd: 12 });
-        break;
-      case 'bumpShip':
-        say('tally', pick(["We just bumped into them. Rude.", "Contact! Like, actual contact!"]), { prio: 3, key: 'tBump', cd: 8 });
-        sayLater(0.9, 'juno', pick(["They started it.", "Personal space, please."]), { prio: 2, key: 'jBump', cd: 8 });
-        sayLater(1.8, 'fergus', "Was that a ship or a wall?", { prio: 2, key: 'fBump', cd: 20 });
-        break;
-      case 'torpRock':
-        say('tally', pick(["Torpedo hit a rock! The rock had it coming.", "Rock took the torpedo for us. Good rock."]), { prio: 3, key: 'tTorpRock', cd: 8 });
-        break;
-      case 'jumpOrder':
-        say('tally', "Juno! Get us out of here!", { prio: 5, dur: 4 });
-        sayLater(0.8, 'juno', pick(["Way ahead of you.", "Say no more. Hold onto something."]), { prio: 5, dur: 4 });
-        sayLater(1.6, 'dot', "Doris and I were just getting started...", { prio: 5, dur: 4 });
-        break;
-    }
-  }
-
-  // Ongoing situations, checked a couple of times a second.
-  function crewPoll() {
-    if (!contact) {
-      if (time > 6) say('tally', `They're closing. ${Math.max(0, (distance() - RANGE) / 100).toFixed(0)} clicks to weapons range. Set us up, Captain.`, { key: 'closing', cd: 30 });
-      return;
-    }
-    const torp = E.def.weapons[1], torpPct = E.wt[1] / torp.interval;
-    const torpInbound = shots.some(s => s.w.kind === 'torpedo' && s.tgt === P && s.homing);
-    const T = P.target, laser = P.def.weapons[0], rail = P.def.weapons[1];
-    const torpThreat = torpInbound || (ai.phase === 'torpedo' && weaponOnline(E, torp) && torpPct >= 0.75);
-
-    // Tally: the enemy
-    if (ai.phase === 'torpedo' && weaponOnline(E, torp) && torpPct > 0.5 && torpPct < 1) say('tally', "Torpedo's half charged. Just saying.", { key: 'torpHalf', cd: 20, prio: 2 });
-    if (ai.phase === 'torpedo' && torpPct >= 1) say('tally', "Torpedo armed! They're swinging their nose round.", { key: 'torpArmed', cd: 20, prio: 3 });
-    if (E.hull < E.def.hullMax * 0.3 && !E.dead) say('tally', pick(["They're smoking. Keep it up!", "Corsair's on fire. In space. Somehow."]), { key: 'eLow', cd: 60, prio: 2 });
-
-    // Juno: engines
-    if (torpThreat && T.engines < 3) say('juno', "Torpedo coming. Engines would be lovely, no pressure.", { key: 'junoTorp', cd: 18, prio: 3 });
-    if (weaponOnline(P, rail) && P.wt[1] >= rail.interval && !inArc(P, rail, 1, E) && eff(P, 'engines') < 1.8) say('juno', "I can't line up Doris on these engines.", { key: 'junoRail', cd: 30 });
-    if (T.engines > P.def.parts.engines.cap) say('juno', `The drive tops out at ${P.def.parts.engines.cap}. You're just making it warm.`, { key: 'engCap', cd: 25 });
-    if (P.spool >= 100 && !P.jumping) say('juno', "Jump drive's warm, Captain. Say the word.", { key: 'jumpReady', cd: 90, prio: 2 });
-
-    // Dot: weapons
-    if (E.down && T.weapons < 6) say('dot', "Their shields are down! More power to the guns!", { key: 'dotKill', cd: 12, prio: 3 });
-    else if (!weaponOnline(P, rail) && T.weapons < rail.min && !torpThreat) say('dot', "Doris needs 4 power. She won't get out of bed for less.", { key: 'dotRail', cd: 35 });
-    if (T.weapons === 0) say('dot', "Guns are cold. Just so you know.", { key: 'dotCold', cd: 30 });
-    if (weaponOnline(P, laser) && hitChance(P, laser, E) < 0.35) say('dot', "Long shots only. One in three if I'm lucky.", { key: 'dotFar', cd: 40 });
-    if (inRange() && !clearShot(P, E) && P.wt[0] >= laser.interval) say('dot', pick(["Rock in the way! I can't see them.", "There's an asteroid in my shot."]), { key: 'dotBlocked', cd: 25 });
-    if (T.weapons > P.def.parts.weapons.cap) say('dot', `Doris maxes out at ${P.def.parts.weapons.cap}. The rest is just noise.`, { key: 'wCap', cd: 25 });
-
-    // Fergus: shields
-    if (P.down) { /* handled by the shields-down event */ }
-    else if (T.shields === 0) say('fergus', "No power to shields? Bold.", { key: 'shZero', cd: 30, prio: 2 });
-    else if (torpThreat && T.shields < 4) say('fergus', "Torpedo incoming. Shields or engines, Captain. I know which I'd pick.", { key: 'fTorp', cd: 20, prio: 3 });
-    else if (P.shield < shieldMax(P) * 0.3 && T.shields < 5) say('fergus', "Shields are sweating. Another point wouldn't hurt.", { key: 'shLow', cd: 25, prio: 2 });
-    if (T.shields > P.def.parts.shields.cap) say('fergus', `She can't use more than ${P.def.parts.shields.cap}. You're just warming the pipes.`, { key: 'shCap', cd: 25 });
-    if (P.hull < P.def.hullMax * 0.3 && !P.dead) say('fergus', "Hull's held together with tape and hope.", { key: 'hullLow', cd: 60, prio: 2 });
-  }
-
-  function crewUpdate(dt) {
-    for (let i = later.length - 1; i >= 0; i--) if (time >= later[i].at) { const l = later.splice(i, 1)[0]; say(l.id, l.text, l.o); }
-    pollT -= dt;
-    if (pollT <= 0) { pollT = 0.5; crewPoll(); }
-  }
-
-  // ---- chatter bubbles ----
-  const CREW_INFO = {
-    tally: { name: 'Tally', c: 'var(--comms)' }, fergus: { name: 'Fergus', c: 'var(--shield)' },
-    dot: { name: 'Dot', c: 'var(--weapon)' }, juno: { name: 'Juno', c: 'var(--engine)' }
-  };
-  const chatterEl = document.getElementById('chatter');
-  function postBubble(id, text, prio, dur) {
-    const info = CREW_INFO[id], b = document.createElement('div');
-    b.className = 'bub' + (prio >= 4 ? ' urgent' : '');
-    b.style.setProperty('--c', info.c);
-    b.style.setProperty('--life', Math.max(3.2, dur) + 's');
-    b.innerHTML = `<span class="f" aria-hidden="true">${info.name[0]}</span><span><b>${info.name}</b></span>`;
-    b.lastChild.appendChild(document.createTextNode(text));
-    chatterEl.appendChild(b);
-    while (chatterEl.children.length > 7) chatterEl.firstChild.remove();
-    setTimeout(() => b.remove(), (Math.max(3.2, dur) + 2) * 1000);
-  }
-  function clearChatter() { chatterEl.innerHTML = ''; }
-
-  // ---- damage ticks under the ship stats ----
-  const tickState = {};
-  function hudTick(who, stat, val) {
-    const host = stat === 'evade' ? document.getElementById(who + '-name') : document.getElementById(who + '-' + stat);
-    const k = who + stat, now = performance.now(), last = tickState[k];
-    if (typeof val === 'number' && last && now - last.t < 450 && last.el.isConnected) {
-      last.v += val; last.t = now; last.el.textContent = '−' + Math.round(last.v);
-      return;
-    }
-    const el = document.createElement('span');
-    el.className = 'tick';
-    el.textContent = typeof val === 'number' ? '−' + Math.max(1, Math.round(val)) : val;
-    host.appendChild(el);
-    tickState[k] = { el, t: now, v: typeof val === 'number' ? val : 0 };
-    setTimeout(() => el.remove(), 1500);
-  }
-
-  // ---- station readouts beside each power row, and the enemy's intent under its stats ----
-  function intentText() {
-    if (state === 'title') return ['Scanning', ''];
-    if (E.dead) return ['Destroyed', 'open'];
-    if (!contact) return [`Closing · ${Math.max(0, distance() - RANGE).toFixed(0)} to range`, ''];
-    if (ai.phase === 'torpedo') {
-      const t = E.def.weapons[1], pct = E.wt[1] / t.interval;
-      return [!weaponOnline(E, t) ? 'Powering torpedo' : pct < 1 ? `Torpedo ${Math.floor(pct * 100)}%` : 'Torpedo armed', 'threat'];
-    }
-    if (E.down) return ['Shields down', 'open'];
-    if (!clearShot(E, P)) return ['Behind a rock', ''];
-    if (ai.phase === 'recover') return ['Raising shields', ''];
-    return ['Autocannon fire', ''];
-  }
-  function statText(k) {
-    if (k === 'shields') {
-      if (eff(P, 'shields') < 0.4) return '<span class="off">offline</span>';
-      if (P.down) return `<span class="off">down</span> · back in <b>${(P.downT / (0.6 + 0.15 * eff(P, 'shields'))).toFixed(1)}s</b>`;
-      return `<b>${P.shield.toFixed(0)}/${shieldMax(P).toFixed(0)}</b> · +${regen(P).toFixed(1)}/s`;
-    }
-    if (k === 'weapons') {
-      const [laser, rail] = P.def.weapons, ls = weaponStatus(P, laser, 0, E), rs = weaponStatus(P, rail, 1, E);
-      // the pips and arcs already show charge, so only say something when it matters
-      const brief = st => st.text.startsWith('charging') ? '' : ' ' + st.text;
-      const l = weaponOnline(P, laser) ? `laser <b>${(hitChance(P, laser, E) * 100).toFixed(0)}%</b>${brief(ls)}` : '<span class="off">laser off</span>';
-      const r = weaponOnline(P, rail) ? `Doris${brief(rs) || ' ' + Math.floor(P.wt[1] / rail.interval * 100) + '%'}` : `<span class="off">Doris needs ${rail.min}</span>`;
-      return l + ' · ' + r;
-    }
-    return `evade <b>${(evasion(P) * 100).toFixed(0)}%</b> · jump <b>${Math.floor(P.spool)}%</b>`;
-  }
-  const statEls = {}, lastHTML = {};
-  SYS.forEach(k => { statEls[k] = document.getElementById('stat-' + k); });
-  const intentEl = document.getElementById('intent');
-  function renderCrew() {
-    SYS.forEach(k => {
-      const html = statText(k);
-      if (lastHTML[k] !== html) { lastHTML[k] = html; statEls[k].innerHTML = html; }
-    });
-    const [txt, cls] = intentText(), key = txt + cls;
-    if (lastHTML.intent !== key) { lastHTML.intent = key; intentEl.textContent = txt; intentEl.className = 'intent ' + cls; }
-  }
-
-  // ---------- Orders (given through comms) ----------
-  // Data-driven so more orders (brace, target their engines, hail...) can be added later.
-  const ORDERS = [{
-    id: 'jump', label: 'Get us out of here', holdTime: 0.9,
-    ready: () => state === 'run' && P.spool >= 100 && !P.jumping && !outcome && !P.dead,
-    progress: () => P.spool / 100,
-    hint: () => P.jumping ? 'Jumping…' : P.spool >= 100 ? 'Hold to jump · lose the salvage' : `Jump drive ${Math.floor(P.spool)}%`,
-    run: () => { P.jumping = 2.2; crewEvent('jumpOrder'); }
-  }];
-  const ordersEl = document.getElementById('orders');
-  ORDERS.forEach(o => {
-    const b = document.createElement('button');
-    b.type = 'button'; b.className = 'order'; b.id = 'order-' + o.id;
-    b.innerHTML = `<span class="lab">${o.label}</span><span class="hint"></span>`;
-    o.el = b; o.hintEl = b.querySelector('.hint'); o.holding = null;
-    const cancel = () => { o.holding = null; b.style.setProperty('--h', 0); };
-    b.addEventListener('pointerdown', ev => { if (!o.ready()) return; ev.preventDefault(); o.holding = performance.now(); try { b.setPointerCapture(ev.pointerId); } catch (e) {} });
-    b.addEventListener('pointerup', cancel); b.addEventListener('pointercancel', cancel); b.addEventListener('lostpointercapture', cancel);
-    b.addEventListener('keydown', ev => { if ((ev.key === 'Enter' || ev.key === ' ') && o.ready()) { ev.preventDefault(); ev.stopPropagation(); o.run(); } });
-    ordersEl.appendChild(b);
-  });
-  function renderOrders() {
-    ORDERS.forEach(o => {
-      const r = o.ready();
-      if (o.holding && r) {
-        const h = (performance.now() - o.holding) / 1000 / o.holdTime;
-        o.el.style.setProperty('--h', Math.min(1, h).toFixed(3));
-        if (h >= 1) { o.holding = null; o.el.style.setProperty('--h', 0); o.run(); }
-      } else if (o.holding) { o.holding = null; o.el.style.setProperty('--h', 0); }
-      o.el.classList.toggle('ready', r);
-      o.el.setAttribute('aria-disabled', r ? 'false' : 'true');
-      o.el.style.setProperty('--p', clamp(o.progress(), 0, 1).toFixed(3));
-      const ht = o.hint(); if (o.hintEl.textContent !== ht) o.hintEl.textContent = ht;
-    });
-  }
-
-  function updateHUD() {
-    const pmx = shieldMax(P), emx = shieldMax(E);
-    setBar('p-hull', P.hull, P.def.hullMax, P.hull.toFixed(0), P.hull < P.def.hullMax * 0.3);
-    setBar('p-sh', P.down ? 0 : P.shield, Math.max(pmx, 1), P.down ? 'DOWN' : P.shield.toFixed(0), P.down);
-    setBar('e-hull', E.hull, E.def.hullMax, E.hull.toFixed(0), E.hull < E.def.hullMax * 0.3);
-    setBar('e-sh', E.down ? 0 : E.shield, Math.max(emx, 1), E.down ? 'DOWN' : E.shield.toFixed(0), E.down);
-    [['s', 'shields'], ['w', 'weapons'], ['e', 'engines']].forEach(([c, k]) => {
-      document.getElementById('eb-' + c).style.width = (E.actual[k] / E.def.reactor * 100) + '%';
-    });
-    const used = SYS.reduce((a, k) => a + P.target[k], 0);
-    document.getElementById('free').textContent = P.def.reactor - used;
-    SYS.forEach(k => {
-      pipRows[k].forEach((d, i) => {
-        d.style.setProperty('--f', clamp(P.actual[k] - i, 0, 1).toFixed(3));
-        d.classList.toggle('tgt', i < P.target[k]);
-      });
-    });
-    renderCrew();
-    renderOrders();
-  }
-
-  // ---------- Overlays & input ----------
-  const titleEl = document.getElementById('title'), endEl = document.getElementById('end');
-  const pauseBtn = document.getElementById('pause');
-  function start() {
-    reset(); crewReset(); clearChatter();
-    titleEl.hidden = true; endEl.hidden = true; state = 'run'; pauseBtn.textContent = 'Pause';
-    log('Corsair gunship detected. Closing to weapons range.');
-    crewEvent('start');
-  }
-  document.getElementById('start').addEventListener('click', start);
-  document.getElementById('again').addEventListener('click', start);
-  function togglePause() {
-    if (state === 'run') { state = 'paused'; pauseBtn.textContent = 'Resume'; nudge('Paused. Reallocate, then resume.'); }
-    else if (state === 'paused') { state = 'run'; pauseBtn.textContent = 'Pause'; }
-  }
-  pauseBtn.addEventListener('click', togglePause);
-  document.querySelectorAll('.pw').forEach(b => b.addEventListener('click', () => adjust(b.dataset.k, +b.dataset.d)));
-  const keymap = { q: ['shields', 1], a: ['shields', -1], w: ['weapons', 1], s: ['weapons', -1], e: ['engines', 1], d: ['engines', -1] };
-  window.addEventListener('keydown', ev => {
-    if (ev.target && ev.target.classList && ev.target.classList.contains('order')) return;
-    if (ev.key === ' ') { ev.preventDefault(); togglePause(); return; }
-    if (ev.key === 'Enter' && state === 'title') { start(); return; }
-    if (ev.key.toLowerCase() === 'j') { const o = ORDERS[0]; if (o.ready()) o.run(); return; }
-    const m = keymap[ev.key.toLowerCase()];
-    if (m) adjust(m[0], m[1]);
-  });
-
-  function showEnd() {
-    state = 'over';
-    const t = document.getElementById('end-title'), x = document.getElementById('end-text'), eb = document.getElementById('end-eyebrow');
-    if (outcome === 'win') { eb.textContent = 'Victory'; t.textContent = 'Corsair destroyed'; x.textContent = "The wreck is yours to strip. Fergus is already eyeing their shield generator."; }
-    else if (outcome === 'lose') { eb.textContent = 'Defeat'; t.textContent = 'Kestrel lost'; x.textContent = "Everyone made it to the escape pods. Juno is humming. Tip: when Tally calls a torpedo, give Fergus shields or Juno engines, then punish their thin shields."; }
-    else { eb.textContent = 'Escaped'; t.textContent = 'Jumped clear'; x.textContent = "You lived, but the salvage stays behind. Dot is sulking. Sometimes that's the right call."; }
-    document.getElementById('st-time').textContent = time.toFixed(0) + 's';
-    document.getElementById('st-dealt').textContent = stats.dealt.toFixed(0);
-    document.getElementById('st-taken').textContent = stats.taken.toFixed(0);
-    document.getElementById('st-ev').textContent = stats.evaded;
-    endEl.hidden = false;
-  }
-
-
-  // ---------- Boot + main loop ----------
-  window.__duel = () => ({ P, E, stats, ai, shots, GL, camState, rocks });
-  GL = initGL(); resize();
-  const startBtn = document.getElementById('start'), loadNote = document.getElementById('load-note');
-  if (GL) {
-    startBtn.disabled = true; startBtn.textContent = 'Loading ships…';
-    loadAssets().then(failed => {
-      startBtn.disabled = false; startBtn.textContent = 'Start battle';
-      if (failed) { loadNote.textContent = 'Some ship models could not be loaded, so stand-in shapes are shown.'; loadNote.hidden = false; }
-    });
-  } else {
-    loadNote.textContent = 'This browser could not start 3D graphics, so the battle view is blank.'; loadNote.hidden = false;
-  }
-
-  let last = performance.now(), clock = 0;
-  function frame(now) {
-    const dt = Math.min(0.05, (now - last) / 1000); last = now; clock += dt;
-    const running = state === 'run';
-    const live = running || state === 'title' || state === 'over';
-    if (running) {
-      time += dt;
-      updatePower(P, dt); updatePower(E, dt);
-      updateAI(dt);
-      updateShields(P, dt); updateShields(E, dt);
-      updateWeapons(P, E, dt); updateWeapons(E, P, dt);
-      updateShots(dt);
-      updateJump(dt);
-      crewUpdate(dt);
-      if (outcome) { endTimer -= dt; if (endTimer <= 0) showEnd(); }
-    }
-    if (live) { updateMove(P, E, dt); updateMove(E, P, dt); collisions(); }
-    if (nudgeT > 0) { nudgeT -= dt; if (nudgeT <= 0) nudgeEl.classList.remove('on'); }
-    updateFx(state === 'paused' ? 0 : dt);
-    renderFrame(state === 'paused' ? 0.0001 : dt, clock);
-    updateHUD();
-    requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
-})();
-</script>
-
+<script src="game.js"></script>
 </body>
 </html>
