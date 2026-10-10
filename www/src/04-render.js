@@ -399,10 +399,12 @@ function updateRockVis(dt) {
 }
 
 // ---- Fortune Station ----
-// The station model has four landing pads; the ship uses the low front-right one, so it lifts off away from the hull.
+// The station model is a disc with a town on top and four landing pads on arms; the ship uses the outer right pad.
 // The model is placed so that pad's deck sits at PAD, height 0. A simple pad stands in if the model didn't load.
 const PAD = { x: 0, y: 0 };
-const STATION = { url: 'models/station.json', scale: 600, pad: [0.300, 0.165, 0.313] };
+// pad: the chosen pad's deck centre in model units (outer right of the four pads on the front arms).
+const STATION = { url: 'models/station.json', scale: 900, pad: [0.300, 0.238, 0.316] };
+const STATION_CENTRE = { x: PAD.x - STATION.pad[0] * STATION.scale, y: PAD.y - STATION.pad[2] * STATION.scale };
 function buildStation() {
   const g = new THREE.Group();
   const fallback = new THREE.Group(); g.add(fallback);

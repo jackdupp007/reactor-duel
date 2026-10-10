@@ -45,6 +45,53 @@ const hangarPose = (pos, look) => {
   if (!portrait()) sideShift(pos, look, 46);
 };
 
+// ---------- Cutscene flight paths ----------
+// A smooth curve (Catmull-Rom) through [x, height, z] points, walked by distance travelled.
+function makePath(pts) {
+  const ext = (a, b) => a.map((v, k) => 2 * v - b[k]);
+  const Q = [ext(pts[0], pts[1]), ...pts, ext(pts[pts.length - 1], pts[pts.length - 2])];
+  const smp = [];
+  for (let i = 1; i < Q.length - 2; i++) for (let j = 0; j < 40; j++) {
+    const t = j / 40, t2 = t * t, t3 = t2 * t, p0 = Q[i - 1], p1 = Q[i], p2 = Q[i + 1], p3 = Q[i + 2];
+    smp.push([0, 1, 2].map(k => 0.5 * (2 * p1[k] + (-p0[k] + p2[k]) * t + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t2 + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * t3)));
+  }
+  smp.push(pts[pts.length - 1].slice());
+  const dist = [0];
+  for (let i = 1; i < smp.length; i++) dist.push(dist[i - 1] + Math.hypot(smp[i][0] - smp[i - 1][0], smp[i][1] - smp[i - 1][1], smp[i][2] - smp[i - 1][2]));
+  const len = dist[dist.length - 1];
+  const at = d => {
+    d = clamp(d, 0, len);
+    let i = 1; while (i < dist.length - 1 && dist[i] < d) i++;
+    const k = (d - dist[i - 1]) / Math.max(1e-6, dist[i] - dist[i - 1]);
+    return [0, 1, 2].map(c => smp[i - 1][c] + (smp[i][c] - smp[i - 1][c]) * k);
+  };
+  return { len, at };
+}
+// Put a cutscene ship at distance d along a path: position, heading, banking into turns, nose following the climb.
+function flyPath(s, path, d, dt) {
+  const a = path.at(d), b = path.at(Math.min(path.len, d + 6)), a0 = path.at(Math.max(0, d - 6));
+  const ox = s.x, oy = s.y;
+  s.x = a[0]; s.h = a[1]; s.y = a[2];
+  const ang = Math.atan2(b[2] - a0[2], b[0] - a0[0]);
+  const turn = angDiff(ang, s.ang) / Math.max(dt, 1e-3);
+  s.ang = ang;
+  s.bank += (clamp(turn * 0.9, -0.7, 0.7) - s.bank) * Math.min(1, dt * 3);
+  s.pitchV = clamp(-(b[1] - a0[1]) / 12 * 0.25, -0.2, 0.2);
+  s.vx = (s.x - ox) / Math.max(dt, 1e-3); s.vy = (s.y - oy) / Math.max(dt, 1e-3); s.speed = Math.hypot(s.vx, s.vy);
+}
+// Chase view for the fly-bys: behind the ship and out to the side away from the station, so the station fills the background.
+function chasePose(pos, look) {
+  const k = portrait() ? 1.5 : 1, fx = Math.cos(P.ang), fz = Math.sin(P.ang);
+  let sx = -fz, sz = fx;                                     // a side, flipped to point away from the station
+  if (sx * (P.x - STATION_CENTRE.x) + sz * (P.y - STATION_CENTRE.y) < 0) { sx = -sx; sz = -sz; }
+  pos.set(P.x - fx * 115 * k + sx * 95 * k, P.h + 34 * k, P.y - fz * 115 * k + sz * 95 * k);
+  const across = portrait() ? 18 : 45;                       // looking across the ship toward the station (less on a narrow screen)
+  look.set(P.x + fx * 40 - sx * across, P.h + 4, P.y + fz * 40 - sz * across);
+}
+// Arrival skims over the pad arms in front of the town; departure lifts off and runs up the station's right flank.
+const LAND_PATH = [[-1250, 170, 260], [-750, 125, 110], [-380, 105, 60], [-170, 80, 40], [-60, 22, 8], [0, 0.6, 0]];
+const TAKEOFF_PATH = [[0, 55, 0], [160, 70, -20], [235, 95, -280], [235, 120, -650], [150, 160, -1100]];
+
 const SCENES = {
   loading: { pose: (pos, look) => { pos.set(0, 900, 900); look.set(0, 0, 0); } },
 
@@ -91,21 +138,27 @@ const SCENES = {
   takeoff: {
     enter() {
       puppet(run.ship, PAD.x, PAD.y); P.ang = HANGAR_ANG; P.boost = 0; setStage({ station: true }); hud(false);
-      cam.rate = 2.2; cam.off = 0; SFX.thrust(5);
+      cam.rate = 2.2; cam.off = 0; SFX.thrust(7);
+      this.path = makePath(TAKEOFF_PATH); this.T = 4.6;
     },
     update(dt) {
       const t = sceneT;
-      P.ang = HANGAR_ANG * (1 - ease(clamp((t - 0.8) / 1.6, 0, 1)));   // swing the nose out to open space while lifting
       P.boost = clamp(t / 0.8, 0, 1) * 3;
-      if (t > 0.6 && t < 2.4) { const k = ease(clamp((t - 0.6) / 1.8, 0, 1)); P.h = 0.6 + k * 55; P.pitchV = -0.07 * Math.sin(k * Math.PI); }
-      if (t > 2.2) { P.speed = Math.min(460, P.speed + dt * 260); P.pitchV = 0.04 * clamp((t - 2.2) / 0.5, 0, 1); }
-      else P.speed = 0;
-      P.slipX = P.slipY = 0; integrate(P, dt);
-      if (t > 5.4) openMap(false);
+      if (t < 2.3) {                                           // lift off the pad, swinging the nose out to open space
+        P.ang = HANGAR_ANG * (1 - ease(clamp((t - 0.8) / 1.4, 0, 1)));
+        const k = ease(clamp((t - 0.6) / 1.7, 0, 1)); P.h = 0.6 + k * 54.4; P.pitchV = -0.07 * Math.sin(k * Math.PI);
+        P.vx = P.vy = 0; P.speed = 0;
+      } else {                                                 // then away, picking up speed past the station
+        const u = clamp((t - 2.3) / this.T, 0, 1);
+        flyPath(P, this.path, this.path.len * Math.pow(u, 1.7), dt);
+        cam.rate = 2.2 + u * 6;                                  // the camera keeps up as the ship speeds away
+      }
+      if (t > 2.3 + this.T - 0.4) openMap(false);
     },
     pose(pos, look) {
-      const fx = PAD.x + clamp(P.x - PAD.x, 0, 1e9) * 0.55, d = portrait() ? 420 : 250;
-      pos.set(fx - 30, 58 + P.h * 0.5, PAD.y + d); look.set(fx + 10, P.h * 0.8 + 4, P.y);
+      if (sceneT >= 2.3) return chasePose(pos, look);
+      const d = portrait() ? 420 : 250;
+      pos.set(PAD.x - 30, 58 + P.h * 0.5, PAD.y + d); look.set(PAD.x + 10, P.h * 0.8 + 4, P.y);
     }
   },
 
@@ -114,7 +167,7 @@ const SCENES = {
     enter(o) {
       this.inField = !!(o && o.inField);
       hud(false); cam.rate = 1.4;
-      if (!this.inField) { P.manual = true; P.speed = 70; P.h = 55; P.pitchV = 0; P.boost = 0; }
+      if (!this.inField) { P.manual = true; P.speed = Math.max(70, P.speed || 0); P.pitchV = 0; P.boost = 0; P.bank = 0; }
       cam.off = portrait() ? 0.18 : 0;
     },
     update(dt) {
@@ -123,8 +176,8 @@ const SCENES = {
     },
     pose(pos, look) {
       if (this.inField) return battlePose(pos, look);
-      const k = portrait() ? 1.7 : 1;
-      pos.set(P.x - 230 * k, P.h + 80 * k, P.y + 170 * k); look.set(P.x + 120, P.h, P.y);
+      const k = portrait() ? 1.7 : 1, fx = Math.cos(P.ang), fz = Math.sin(P.ang);
+      pos.set(P.x - fx * 230 * k - fz * 170 * k, P.h + 80 * k, P.y - fz * 230 * k + fx * 170 * k); look.set(P.x + fx * 120, P.h, P.y + fz * 120);
     }
   },
 
@@ -219,21 +272,29 @@ const SCENES = {
   // Coming home: descend onto the pad, then the hangar with repairs done.
   dock: {
     enter() {
-      puppet(run.ship, PAD.x - 460, PAD.y); P.ang = 0; P.h = 150; P.boost = 2;
-      setStage({ station: true }); hud(false); cam.rate = 1.6; cam.off = 0; SFX.thrust(4);
+      this.path = makePath(LAND_PATH); this.T = 6.5; this.landedAng = null;
+      puppet(run.ship, LAND_PATH[0][0], LAND_PATH[0][2]); P.boost = 2; P.bank = 0;
+      flyPath(P, this.path, 0, 1 / 60); P.trailReset = true;
+      setStage({ station: true }); hud(false); cam.rate = 2.6; cam.off = 0; SFX.thrust(6);
       banner('Fortune Station', 'Docking', 2400);
     },
     update(dt) {
-      const k = ease(clamp(sceneT / 4, 0, 1));
-      P.x = PAD.x - 460 * (1 - k); P.h = 0.6 + 150 * Math.pow(1 - k, 1.6); P.pitchV = 0.06 * (1 - k);
-      P.boost = 2 * (1 - k); P.speed = 0;
-      if (sceneT > 4) { P.ang = HANGAR_ANG * ease(clamp((sceneT - 4) / 1.6, 0, 1)); cam.rate = 1.3; }   // settle into parking position
-      if (sceneT > 6.6) { run.hull = SHIPS[run.ship].hullMax; go('hangar', { note: 'Repairs complete. The ship is good as new.' }); }
+      const u = clamp(sceneT / this.T, 0, 1);
+      if (u < 1) {                                             // in fast past the pads and town, slowing all the way to the pad
+        flyPath(P, this.path, this.path.len * (1 - Math.pow(1 - u, 2.4)), dt);
+        P.boost = 2 * (1 - u) + 0.3;
+      } else {                                                 // down: settle into the parking spot
+        const k = ease(clamp((sceneT - this.T) / 1.6, 0, 1));
+        if (!this.landedAng && this.landedAng !== 0) this.landedAng = P.ang;
+        P.ang = this.landedAng + angDiff(HANGAR_ANG, this.landedAng) * k;
+        P.h = 0.6; P.bank *= 0.9; P.pitchV *= 0.9; P.boost = 0; P.vx = P.vy = 0; P.speed = 0;
+        cam.rate = 1.3;
+      }
+      if (sceneT > this.T + 2.6) { this.landedAng = null; run.hull = SHIPS[run.ship].hullMax; go('hangar', { note: 'Repairs complete. The ship is good as new.' }); }
     },
     pose(pos, look) {
-      if (sceneT > 4) return hangarPose(pos, look);           // touched down: pan round to the front of the ship
-      const d = portrait() ? 560 : 320;
-      pos.set(PAD.x + 80, 70, PAD.y + d); look.set(P.x * 0.6 + PAD.x * 0.4, P.h * 0.7 + 10, P.y);
+      if (sceneT > this.T - 0.6) return hangarPose(pos, look);   // touching down: pan round to the front of the ship
+      return chasePose(pos, look);
     }
   },
 
@@ -399,7 +460,7 @@ function resize() {
   if (GL) { GL.renderer.setPixelRatio(DPR); GL.renderer.setSize(W, H, false); GL.camera.aspect = W / H; GL.camera.updateProjectionMatrix(); }
 }
 window.addEventListener('resize', resize); resize();
-window.__duel = () => ({ P, E, stats, shots, rocks, scene, state, run, cam, GL, go, openMap, SCENES });
+window.__duel = () => ({ P, E, stats, shots, rocks, scene, sceneT, state, run, cam, GL, go, openMap, SCENES });
 
 GL = initGL(); resize();
 puppet('kestrel', PAD.x, PAD.y);

@@ -4,7 +4,7 @@
 // Output is GLB; to-json.py then splits each into .json + texture files the artifact host can serve.
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
-import { weld, simplify, textureCompress, prune, dedup } from '@gltf-transform/functions';
+import { weld, simplify, textureCompress, prune, dedup, quantize } from '@gltf-transform/functions';
 import { MeshoptSimplifier } from 'meshoptimizer';
 import sharp from 'sharp';
 import path from 'node:path';
@@ -29,7 +29,7 @@ const MODELS = [
   { src: 'ice-2', out: 'ice-2-lod', tex: 256, ratio: 0.12 },
   { src: 'ice-crystal', out: 'ice-crystal-lod', tex: 256, ratio: 0.12 },
   // Fortune Station: four landing pads on the outside.
-  { src: 'station', tex: 2048, ratio: 0.8 },
+  { src: 'station2', out: 'station', tex: 2048, ratio: 0.4, quantize: true },
 ];
 
 // Remove triangles whose three corners all sit below `y` (the industrial asteroid's base disc).
@@ -65,6 +65,7 @@ for (const m of MODELS) {
   await doc.transform(...steps);
 
   let tris = 0;
+  const qsteps = m.quantize ? [quantize({ quantizePosition: 14, quantizeNormal: 10, quantizeTexcoord: 12 })] : [];
   const mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
   for (const mesh of doc.getRoot().listMeshes()) for (const prim of mesh.listPrimitives()) {
     tris += prim.getIndices().getCount() / 3;
@@ -72,6 +73,7 @@ for (const m of MODELS) {
     for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], lo[k]); mx[k] = Math.max(mx[k], hi[k]); }
   }
   const name = m.out || m.src;
+  if (qsteps.length) await doc.transform(...qsteps);       // big models: store vertices as small integers (about half the size)
   await io.write(path.join(OUT, name + '.glb'), doc);
   console.log(`${name}: ${tris} tris, tex ${m.tex}, bounds [${mn.map(v => v.toFixed(3))}] .. [${mx.map(v => v.toFixed(3))}]`);
 }
