@@ -38,7 +38,7 @@ const SHIPS = {
       engines: { name: 'Mk I drive', eff: 0.85, cap: 6 }
     },
     weapons: [
-      { name: 'Pulse laser', short: 'laser', mount: 'turret', arc: 30, traverse: 70, mountX: -17,
+      { name: 'Pulse laser', short: 'laser', mount: 'turret', arc: 30, traverse: 70, mountX: -17, mountH: 14,
         min: 1, cap: 3, base: 3, per: 1.5, interval: 2.2, speed: 600, acc: 0.95, falloff: 0.35, pierce: 0, color: '#ffb070', kind: 'bolt' },
       { name: 'Rail cannon', short: 'rail', nick: 'Doris', label: 'Rail', mount: 'fixed', arc: 20,
         min: 4, cap: 7, base: 30, per: 4, interval: 8, speed: 1000, acc: 0.95, falloff: 0.15, pierce: 0.35, color: '#fff1c2', kind: 'rail' }
@@ -57,13 +57,13 @@ const SHIPS = {
     },
     weapons: [
       // Fires bursts of 6: each round is weak but rolls its own hit, so damage arrives steadily rather than all-or-nothing.
-      { name: 'Autocannon', short: 'autocannon', mount: 'turret', arc: 40, traverse: 45, mountX: -12, burst: 6, gap: 0.1,
+      { name: 'Autocannon', short: 'autocannon', mount: 'turret', arc: 40, traverse: 45, mountX: -12, mountH: 18, burst: 6, gap: 0.1,
         min: 1, cap: 3, base: 0.8, per: 0.35, interval: 2.6, speed: 560, acc: 0.97, falloff: 0.25, pierce: 0, color: '#ff7a55', kind: 'bolt' },
       { name: 'Torpedo', short: 'torpedo', nick: 'Bertha', label: 'Torpedo', mount: 'fixed', arc: 60,
         min: 5, cap: 6, base: 32, per: 3, interval: 14, pierce: 0.2, color: '#ff3b5c', kind: 'torpedo',
-        // Once charged it needs lockT seconds of the target in its arc to lock, then launches by itself.
-        // It boosts straight ahead, then chases (speed, turn rad/s) until its fuel runs out and it blows up harmlessly.
-        lockT: 4, boost: 1.2, boostSpeed: 190, speed: 120, turn: 1.5, fuel: 11 }
+        // Once charged it locks within lockT seconds of the target entering its forward arc, then launches by itself.
+        // It flies straight out of the nose for `boost` seconds, then chases (speed, turn rad/s) until its fuel runs out and it blows up harmlessly.
+        lockT: 0.8, boost: 1.8, boostSpeed: 190, speed: 120, turn: 1.5, fuel: 11 }
     ],
     alloc: { shields: 4, weapons: 4, engines: 2 },
     ai: { base: { shields: 4, weapons: 4, engines: 2 }, charge: { shields: 1, weapons: 6, engines: 3 }, recover: { shields: 5, weapons: 3, engines: 2 }, skirmish: [14, 20], recoverT: 9 }
@@ -142,7 +142,8 @@ const run = { ship: 'kestrel', crew: { comms: 'tally', eng: 'fergus', wpn: 'dot'
 // The fight is worked out on a flat plane: positions, headings, power, shields, shots. Rendering only reads it.
 
 const RANGE = 700;
-const SHIP_R = 28;               // collision radius of a ship hull
+const SHIP_R = 28;
+const SHOT_H = 9;                // height shots fly at (turret rounds start at their turret and drop to it)               // collision radius of a ship hull
 let P = null, E = null;          // player ship and opponent (in the menu both fly themselves)
 let shots = [], parts = [], rocks = [], fieldKind = 'rock';
 let stats = { dealt: 0, taken: 0, evaded: 0, bumps: 0 };
@@ -320,7 +321,7 @@ function updateWeapons(s, foe, dt) {
     if (s.wt[i] < w.interval) return;
     if (w.kind === 'torpedo') {
       const was = s.lock[i];
-      s.lock[i] = ready() ? Math.min(1, s.lock[i] + dt / w.lockT) : Math.max(0, s.lock[i] - dt / (w.lockT * 0.75));
+      s.lock[i] = ready() ? Math.min(1, s.lock[i] + dt / w.lockT) : Math.max(0, s.lock[i] - dt / 4);   // a lost lock fades slowly
       if (was === 0 && s.lock[i] > 0 && s === E) crewEvent('enemyLock');
       if (s.lock[i] >= 1) { s.lock[i] = 0; s.wt[i] = 0; fire(s, foe, w, i); }
       return;
@@ -347,9 +348,9 @@ function weaponStatus(s, w, i, foe) {
 function fire(s, foe, w, i) {
   const dmg = weaponDmg(s, w);
   const a0 = weaponAim(s, w, i);
-  const mb = muzzleBase(s, w), reach = w.mount === 'turret' ? 7 : 30;
+  const mb = muzzleBase(s, w), reach = w.mount === 'turret' ? 9 : w.kind === 'torpedo' ? 36 : 30;
   const ox = mb.x + Math.cos(a0) * reach, oy = mb.y + Math.sin(a0) * reach;
-  burst(ox, oy, w.burst ? 3 : 5, w.color, 70);
+  burst(ox, oy, w.burst ? 3 : 5, w.color, 70, (w.mountH || SHOT_H) - SHOT_H);
   let p;
   if (w.kind === 'torpedo') {
     // Guided, but physical: it hits only if it actually reaches the target before its fuel runs out.
@@ -364,7 +365,7 @@ function fire(s, foe, w, i) {
     for (let k = 0; k < 2; k++) { const tt = Math.hypot(lx - ox, ly - oy) / w.speed; lx = foe.x + foe.vx * tt; ly = foe.y + foe.vy * tt; }
     let a = Math.atan2(ly - oy, lx - ox);
     if (!hit) a += Math.atan2((Math.random() < 0.5 ? -1 : 1) * rand(42, 80), Math.hypot(lx - ox, ly - oy));
-    p = { x: ox, y: oy, src: s, tgt: foe, w, dmg, hit, life: (RANGE * 1.5) / w.speed, age: 0, homing: false, minD: 1e9, passed: false, trail: [] };
+    p = { x: ox, y: oy, src: s, tgt: foe, w, dmg, hit, life: (RANGE * 1.5) / w.speed, age: 0, homing: false, minD: 1e9, passed: false, trail: [], sy: w.mountH };
     p.vx = Math.cos(a) * w.speed; p.vy = Math.sin(a) * w.speed;
   }
   shots.push(p);
@@ -515,10 +516,10 @@ function jink(s) {
 //   fire  - additive puff that grows and goes from yellow to red
 //   smoke - dark puff that grows and fades slowly
 //   debris- dark chunk tumbling out
-function burst(x, y, n, color, sp) {
+function burst(x, y, n, color, sp, h0) {
   for (let i = 0; i < n; i++) {
     const a = rand(0, Math.PI * 2), v = rand(sp * 0.2, sp);
-    parts.push({ k: 'glow', x, y, h: rand(-4, 6), vx: Math.cos(a) * v, vy: Math.sin(a) * v, vh: 0, life: rand(0.3, 0.8), max: 0.8, size: 2, color });
+    parts.push({ k: 'glow', x, y, h: (h0 || 0) + rand(-4, 6), vx: Math.cos(a) * v, vy: Math.sin(a) * v, vh: 0, life: rand(0.3, 0.8), max: 0.8, size: 2, color });
   }
 }
 function sparks(x, y, n, k) {
@@ -1007,7 +1008,7 @@ const ROCK_FILES = {
   'ice-2': 'models/ice-2.json', 'ice-crystal': 'models/ice-crystal.json'
 };
 const LOD_FILES = { rock: ['models/rock-1-lod.json', 'models/rock-2-lod.json'], ice: ['models/ice-2-lod.json', 'models/ice-crystal-lod.json'] };
-const SHOT_Y = 9;
+const SHOT_Y = SHOT_H;
 const tpl = {};                     // loaded model templates by url
 
 function radialTex(stops, size) {
@@ -1491,7 +1492,7 @@ function disposeShot(p) {
 function updateShotVis() {
   for (const p of shots) {
     if (!p.mesh) p.mesh = shotMesh(p);
-    p.mesh.position.set(p.x, SHOT_Y, p.y);
+    p.mesh.position.set(p.x, p.sy ? SHOT_Y + (p.sy - SHOT_Y) * Math.exp(-p.age * 7) : SHOT_Y, p.y);   // turret rounds leave the barrel, then settle
     p.mesh.rotation.y = -Math.atan2(p.vy, p.vx);
     if (p.w.kind === 'torpedo') {
       const k = 22 + Math.sin(p.age * 18) * 6; p.mesh.userData.glow.scale.set(k, k, 1);
@@ -2315,14 +2316,14 @@ function go(name, o) {
 // ---------- Menus ----------
 function statRows(def) {
   const turret = def.weapons[0], big = def.weapons[1];
-  const turretDps = (turret.base + turret.per * (turret.cap - turret.min)) / turret.interval;
+  const turretDps = (turret.base + turret.per * (turret.cap - turret.min)) * (turret.burst || 1) / turret.interval;   // at full power, every round of a burst
   const rows = [
     ['Hull', def.hullMax, 160, def.hullMax],
     ['Reactor', def.reactor, 12, def.reactor + ' units'],
     ['Power transfer', def.transfer, 1, def.transfer.toFixed(1) + '/s'],
     ['Shields', def.parts.shields.cap, 7, 'up to ' + def.parts.shields.cap],
     ['Engines', def.parts.engines.cap * def.parts.engines.eff, 6, Math.round(def.parts.engines.eff * 100) + '% · up to ' + def.parts.engines.cap],
-    [turret.name, turretDps, 3, turretDps.toFixed(1) + ' dmg/s'],
+    [turret.name, turretDps, 4, turretDps.toFixed(1) + ' dmg/s' + (turret.burst ? ` · ${turret.burst}-round bursts` : '')],
     [`${big.name} "${big.nick}"`, big.base, 36, big.base + ' dmg · needs ' + big.min]
   ];
   return rows.map(([l, v, m, t]) => `<div class="srow"><span>${l}</span><i><em style="width:${clamp(v / m, 0.04, 1) * 100}%"></em></i><b>${t}</b></div>`).join('');

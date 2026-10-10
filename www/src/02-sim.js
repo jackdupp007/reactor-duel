@@ -2,7 +2,8 @@
 // The fight is worked out on a flat plane: positions, headings, power, shields, shots. Rendering only reads it.
 
 const RANGE = 700;
-const SHIP_R = 28;               // collision radius of a ship hull
+const SHIP_R = 28;
+const SHOT_H = 9;                // height shots fly at (turret rounds start at their turret and drop to it)               // collision radius of a ship hull
 let P = null, E = null;          // player ship and opponent (in the menu both fly themselves)
 let shots = [], parts = [], rocks = [], fieldKind = 'rock';
 let stats = { dealt: 0, taken: 0, evaded: 0, bumps: 0 };
@@ -180,7 +181,7 @@ function updateWeapons(s, foe, dt) {
     if (s.wt[i] < w.interval) return;
     if (w.kind === 'torpedo') {
       const was = s.lock[i];
-      s.lock[i] = ready() ? Math.min(1, s.lock[i] + dt / w.lockT) : Math.max(0, s.lock[i] - dt / (w.lockT * 0.75));
+      s.lock[i] = ready() ? Math.min(1, s.lock[i] + dt / w.lockT) : Math.max(0, s.lock[i] - dt / 4);   // a lost lock fades slowly
       if (was === 0 && s.lock[i] > 0 && s === E) crewEvent('enemyLock');
       if (s.lock[i] >= 1) { s.lock[i] = 0; s.wt[i] = 0; fire(s, foe, w, i); }
       return;
@@ -207,9 +208,9 @@ function weaponStatus(s, w, i, foe) {
 function fire(s, foe, w, i) {
   const dmg = weaponDmg(s, w);
   const a0 = weaponAim(s, w, i);
-  const mb = muzzleBase(s, w), reach = w.mount === 'turret' ? 7 : 30;
+  const mb = muzzleBase(s, w), reach = w.mount === 'turret' ? 9 : w.kind === 'torpedo' ? 36 : 30;
   const ox = mb.x + Math.cos(a0) * reach, oy = mb.y + Math.sin(a0) * reach;
-  burst(ox, oy, w.burst ? 3 : 5, w.color, 70);
+  burst(ox, oy, w.burst ? 3 : 5, w.color, 70, (w.mountH || SHOT_H) - SHOT_H);
   let p;
   if (w.kind === 'torpedo') {
     // Guided, but physical: it hits only if it actually reaches the target before its fuel runs out.
@@ -224,7 +225,7 @@ function fire(s, foe, w, i) {
     for (let k = 0; k < 2; k++) { const tt = Math.hypot(lx - ox, ly - oy) / w.speed; lx = foe.x + foe.vx * tt; ly = foe.y + foe.vy * tt; }
     let a = Math.atan2(ly - oy, lx - ox);
     if (!hit) a += Math.atan2((Math.random() < 0.5 ? -1 : 1) * rand(42, 80), Math.hypot(lx - ox, ly - oy));
-    p = { x: ox, y: oy, src: s, tgt: foe, w, dmg, hit, life: (RANGE * 1.5) / w.speed, age: 0, homing: false, minD: 1e9, passed: false, trail: [] };
+    p = { x: ox, y: oy, src: s, tgt: foe, w, dmg, hit, life: (RANGE * 1.5) / w.speed, age: 0, homing: false, minD: 1e9, passed: false, trail: [], sy: w.mountH };
     p.vx = Math.cos(a) * w.speed; p.vy = Math.sin(a) * w.speed;
   }
   shots.push(p);
@@ -375,10 +376,10 @@ function jink(s) {
 //   fire  - additive puff that grows and goes from yellow to red
 //   smoke - dark puff that grows and fades slowly
 //   debris- dark chunk tumbling out
-function burst(x, y, n, color, sp) {
+function burst(x, y, n, color, sp, h0) {
   for (let i = 0; i < n; i++) {
     const a = rand(0, Math.PI * 2), v = rand(sp * 0.2, sp);
-    parts.push({ k: 'glow', x, y, h: rand(-4, 6), vx: Math.cos(a) * v, vy: Math.sin(a) * v, vh: 0, life: rand(0.3, 0.8), max: 0.8, size: 2, color });
+    parts.push({ k: 'glow', x, y, h: (h0 || 0) + rand(-4, 6), vx: Math.cos(a) * v, vy: Math.sin(a) * v, vh: 0, life: rand(0.3, 0.8), max: 0.8, size: 2, color });
   }
 }
 function sparks(x, y, n, k) {

@@ -265,14 +265,14 @@ function go(name, o) {
 // ---------- Menus ----------
 function statRows(def) {
   const turret = def.weapons[0], big = def.weapons[1];
-  const turretDps = (turret.base + turret.per * (turret.cap - turret.min)) / turret.interval;
+  const turretDps = (turret.base + turret.per * (turret.cap - turret.min)) * (turret.burst || 1) / turret.interval;   // at full power, every round of a burst
   const rows = [
     ['Hull', def.hullMax, 160, def.hullMax],
     ['Reactor', def.reactor, 12, def.reactor + ' units'],
     ['Power transfer', def.transfer, 1, def.transfer.toFixed(1) + '/s'],
     ['Shields', def.parts.shields.cap, 7, 'up to ' + def.parts.shields.cap],
     ['Engines', def.parts.engines.cap * def.parts.engines.eff, 6, Math.round(def.parts.engines.eff * 100) + '% · up to ' + def.parts.engines.cap],
-    [turret.name, turretDps, 3, turretDps.toFixed(1) + ' dmg/s'],
+    [turret.name, turretDps, 4, turretDps.toFixed(1) + ' dmg/s' + (turret.burst ? ` · ${turret.burst}-round bursts` : '')],
     [`${big.name} "${big.nick}"`, big.base, 36, big.base + ' dmg · needs ' + big.min]
   ];
   return rows.map(([l, v, m, t]) => `<div class="srow"><span>${l}</span><i><em style="width:${clamp(v / m, 0.04, 1) * 100}%"></em></i><b>${t}</b></div>`).join('');

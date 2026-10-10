@@ -34,7 +34,7 @@ const SHIPS = {
       engines: { name: 'Mk I drive', eff: 0.85, cap: 6 }
     },
     weapons: [
-      { name: 'Pulse laser', short: 'laser', mount: 'turret', arc: 30, traverse: 70, mountX: -17,
+      { name: 'Pulse laser', short: 'laser', mount: 'turret', arc: 30, traverse: 70, mountX: -17, mountH: 14,
         min: 1, cap: 3, base: 3, per: 1.5, interval: 2.2, speed: 600, acc: 0.95, falloff: 0.35, pierce: 0, color: '#ffb070', kind: 'bolt' },
       { name: 'Rail cannon', short: 'rail', nick: 'Doris', label: 'Rail', mount: 'fixed', arc: 20,
         min: 4, cap: 7, base: 30, per: 4, interval: 8, speed: 1000, acc: 0.95, falloff: 0.15, pierce: 0.35, color: '#fff1c2', kind: 'rail' }
@@ -53,13 +53,13 @@ const SHIPS = {
     },
     weapons: [
       // Fires bursts of 6: each round is weak but rolls its own hit, so damage arrives steadily rather than all-or-nothing.
-      { name: 'Autocannon', short: 'autocannon', mount: 'turret', arc: 40, traverse: 45, mountX: -12, burst: 6, gap: 0.1,
+      { name: 'Autocannon', short: 'autocannon', mount: 'turret', arc: 40, traverse: 45, mountX: -12, mountH: 18, burst: 6, gap: 0.1,
         min: 1, cap: 3, base: 0.8, per: 0.35, interval: 2.6, speed: 560, acc: 0.97, falloff: 0.25, pierce: 0, color: '#ff7a55', kind: 'bolt' },
       { name: 'Torpedo', short: 'torpedo', nick: 'Bertha', label: 'Torpedo', mount: 'fixed', arc: 60,
         min: 5, cap: 6, base: 32, per: 3, interval: 14, pierce: 0.2, color: '#ff3b5c', kind: 'torpedo',
-        // Once charged it needs lockT seconds of the target in its arc to lock, then launches by itself.
-        // It boosts straight ahead, then chases (speed, turn rad/s) until its fuel runs out and it blows up harmlessly.
-        lockT: 4, boost: 1.2, boostSpeed: 190, speed: 120, turn: 1.5, fuel: 11 }
+        // Once charged it locks within lockT seconds of the target entering its forward arc, then launches by itself.
+        // It flies straight out of the nose for `boost` seconds, then chases (speed, turn rad/s) until its fuel runs out and it blows up harmlessly.
+        lockT: 0.8, boost: 1.8, boostSpeed: 190, speed: 120, turn: 1.5, fuel: 11 }
     ],
     alloc: { shields: 4, weapons: 4, engines: 2 },
     ai: { base: { shields: 4, weapons: 4, engines: 2 }, charge: { shields: 1, weapons: 6, engines: 3 }, recover: { shields: 5, weapons: 3, engines: 2 }, skirmish: [14, 20], recoverT: 9 }

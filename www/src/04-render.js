@@ -22,7 +22,7 @@ const ROCK_FILES = {
   'ice-2': 'models/ice-2.json', 'ice-crystal': 'models/ice-crystal.json'
 };
 const LOD_FILES = { rock: ['models/rock-1-lod.json', 'models/rock-2-lod.json'], ice: ['models/ice-2-lod.json', 'models/ice-crystal-lod.json'] };
-const SHOT_Y = 9;
+const SHOT_Y = SHOT_H;
 const tpl = {};                     // loaded model templates by url
 
 function radialTex(stops, size) {
@@ -506,7 +506,7 @@ function disposeShot(p) {
 function updateShotVis() {
   for (const p of shots) {
     if (!p.mesh) p.mesh = shotMesh(p);
-    p.mesh.position.set(p.x, SHOT_Y, p.y);
+    p.mesh.position.set(p.x, p.sy ? SHOT_Y + (p.sy - SHOT_Y) * Math.exp(-p.age * 7) : SHOT_Y, p.y);   // turret rounds leave the barrel, then settle
     p.mesh.rotation.y = -Math.atan2(p.vy, p.vx);
     if (p.w.kind === 'torpedo') {
       const k = 22 + Math.sin(p.age * 18) * 6; p.mesh.userData.glow.scale.set(k, k, 1);
